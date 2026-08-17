@@ -22,7 +22,7 @@ public:
 
     static bool IsDeviceName(const std::wstring& name);
 
-    bool Open(const std::wstring& name);
+    bool Open(const std::wstring& name, uint32_t track);
     bool Close();
 
     uint32_t Read(void* pBuf, uint32_t size, uint32_t timeout = 0) override;
@@ -34,28 +34,31 @@ public:
     const DsMetaInfo* GetMetaInformation() const override;
 
     SectorSourceType Type() const override;
+    uint64_t GetStartSectors() const override;
+    uint32_t GetSectorsCount() const override;
     uint32_t ReadSectors(uint64_t startNo, uint32_t count, void* buf) const override;
     uint32_t SectorSize() const override;
     uint32_t SeekToSector(uint64_t sectorNo) override;
 
 protected:
-    bool OpenImage(const std::wstring& imgFile);
-    bool OpenDevice(const std::wstring& deviceName);
+    bool OpenImage(const std::wstring& imgFile, uint32_t track);
+    bool OpenDevice(const std::wstring& deviceName, uint32_t track);
 
 private:
     using CdioDeleter = void(*)(CdIo_t*);
 
-    bool InitFromOpenedCdio(const std::wstring& sourceName);
+    bool InitFromOpenedCdio(const std::wstring& sourceName, uint32_t track);
     void FillMetaInfo();
 
 private:
     std::unique_ptr<CdIo_t, CdioDeleter> m_cdio;
     DsMetaInfo m_metaInfo;
+    uint32_t m_track;
     uint64_t m_curSector;
     uint64_t m_totalSectors;
-    int64_t m_firstLsn;
+    uint64_t m_startSector;
 };
 
-std::unique_ptr<CDataStream> MakeCDSectorsStream(const std::wstring& name);
+std::unique_ptr<CDataStream> MakeCDSectorsStream(const std::wstring& name, uint32_t track);
 
 #endif // CD_SECTORS_STREAM_H

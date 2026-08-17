@@ -78,10 +78,10 @@ void AddCdTextTag(CMediaTag& tag, const cdtext_t* cdText, cdtext_field_t field, 
 
 } // namespace
 
-std::unique_ptr<CDataStream> MakeCDSectorsStream(const std::wstring& name)
+std::unique_ptr<CDataStream> MakeCDSectorsStream(const std::wstring& name, uint32_t track)
 {
     auto stream = std::make_unique<CCDSectorsStream>();
-    if (!stream->Open(name)) {
+    if (!stream->Open(name, track)) {
         return nullptr;
     }
     return stream;
@@ -90,9 +90,10 @@ std::unique_ptr<CDataStream> MakeCDSectorsStream(const std::wstring& name)
 CCDSectorsStream::CCDSectorsStream()
     : m_cdio(nullptr, cdio_destroy)
     , m_metaInfo{}
+    , m_track(0)
     , m_curSector(0)
     , m_totalSectors(0)
-    , m_firstLsn(0)
+    , m_startSector(0)
 {
     m_style = dsStyleFixedLength | dsStyleSeekable | dsStyleTellPos;
     m_metaInfo.itemSequence = 0;
@@ -111,28 +112,29 @@ bool CCDSectorsStream::IsDeviceName(const std::wstring& name)
     return ParseDeviceDriveLetter(name, driveLetter);
 }
 
-bool CCDSectorsStream::Open(const std::wstring& name)
+bool CCDSectorsStream::Open(const std::wstring& name, uint32_t track)
 {
     Close();
 
-    if (name.empty()) {
+    if (name.empty() || (track == 0)) {
         return false;
     }
 
     if (IsDeviceName(name)) {
-        return OpenDevice(name);
+        return OpenDevice(name, track);
     }
 
-    return OpenImage(name);
+    return OpenImage(name, track);
 }
 
 bool CCDSectorsStream::Close()
 {
     m_cdio.reset();
     m_name.clear();
+    m_track = 0;
     m_curSector = 0;
     m_totalSectors = 0;
-    m_firstLsn = 0;
+    m_startSector = 0;
     m_metaInfo.itemTag.Clear();
     m_metaInfo.itemSequence = 0;
     m_metaInfo.itemMediaType = "Audio CD";
@@ -203,12 +205,16 @@ void CCDSectorsStream::Seek(SeekBase base, long long off)
         return;
     }
 
-    m_curSector = static_cast<uint64_t>(targetBytes / static_cast<int64_t>(secSize));
+    const uint64_t offsetSectors = static_cast<uint64_t>(targetBytes / static_cast<int64_t>(secSize));
+    m_curSector = m_startSector + offsetSectors;
 }
 
 std::size_t CCDSectorsStream::Tell()
 {
-    return static_cast<std::size_t>(m_curSector * SectorSize());
+    if (m_curSector < m_startSector) {
+        return 0;
+    }
+    return static_cast<std::size_t>((m_curSector - m_startSector) * SectorSize());
 }
 
 const DsMetaInfo* CCDSectorsStream::GetMetaInformation() const
@@ -224,15 +230,30 @@ SectorSourceType CCDSectorsStream::Type() const
     return SectorSourceType::AudioCD;
 }
 
+uint64_t CCDSectorsStream::GetStartSectors() const
+{
+    return m_startSector;
+}
+
+uint32_t CCDSectorsStream::GetSectorsCount() const
+{
+    return static_cast<uint32_t>(m_totalSectors);
+}
+
 uint32_t CCDSectorsStream::ReadSectors(uint64_t startNo, uint32_t count, void* buf) const
 {
-    if (!m_cdio || (buf == nullptr) || (count == 0) || (startNo >= m_totalSectors)) {
+    if (!m_cdio || (buf == nullptr) || (count == 0) || (startNo < m_startSector)) {
         return 0;
     }
 
-    const uint64_t left = m_totalSectors - startNo;
+    const uint64_t endSector = m_startSector + m_totalSectors;
+    if (startNo >= endSector) {
+        return 0;
+    }
+
+    const uint64_t left = endSector - startNo;
     const uint32_t realCount = static_cast<uint32_t>(std::min<uint64_t>(left, count));
-    const lsn_t lsn = static_cast<lsn_t>(m_firstLsn + static_cast<int64_t>(startNo));
+    const lsn_t lsn = static_cast<lsn_t>(startNo);
     const driver_return_code_t drc = cdio_read_audio_sectors(m_cdio.get(), buf, lsn, realCount);
     if (drc != DRIVER_OP_SUCCESS) {
         return 0;
@@ -248,7 +269,8 @@ uint32_t CCDSectorsStream::SectorSize() const
 
 uint32_t CCDSectorsStream::SeekToSector(uint64_t sectorNo)
 {
-    if (sectorNo > m_totalSectors) {
+    const uint64_t endSector = m_startSector + m_totalSectors;
+    if ((sectorNo < m_startSector) || (sectorNo > endSector)) {
         return 0;
     }
 
@@ -256,7 +278,7 @@ uint32_t CCDSectorsStream::SeekToSector(uint64_t sectorNo)
     return static_cast<uint32_t>(m_curSector);
 }
 
-bool CCDSectorsStream::OpenImage(const std::wstring& imgFile)
+bool CCDSectorsStream::OpenImage(const std::wstring& imgFile, uint32_t track)
 {
     const std::string source = Utf16LeToLocalMBCS(imgFile);
     if (source.empty()) {
@@ -268,10 +290,10 @@ bool CCDSectorsStream::OpenImage(const std::wstring& imgFile)
         return false;
     }
 
-    return InitFromOpenedCdio(imgFile);
+    return InitFromOpenedCdio(imgFile, track);
 }
 
-bool CCDSectorsStream::OpenDevice(const std::wstring& deviceName)
+bool CCDSectorsStream::OpenDevice(const std::wstring& deviceName, uint32_t track)
 {
     wchar_t driveLetter = L'\0';
     if (!ParseDeviceDriveLetter(deviceName, driveLetter)) {
@@ -288,10 +310,10 @@ bool CCDSectorsStream::OpenDevice(const std::wstring& deviceName)
         return false;
     }
 
-    return InitFromOpenedCdio(deviceName);
+    return InitFromOpenedCdio(deviceName, track);
 }
 
-bool CCDSectorsStream::InitFromOpenedCdio(const std::wstring& sourceName)
+bool CCDSectorsStream::InitFromOpenedCdio(const std::wstring& sourceName, uint32_t track)
 {
     if (!m_cdio) {
         return false;
@@ -302,18 +324,28 @@ bool CCDSectorsStream::InitFromOpenedCdio(const std::wstring& sourceName)
         return false;
     }
 
-    const track_t firstTrack = cdio_get_first_track_num(m_cdio.get());
-    const lsn_t firstLsn = cdio_get_track_lsn(m_cdio.get(), firstTrack);
-    const lsn_t lastLsn = cdio_get_disc_last_lsn(m_cdio.get());
-    if ((firstTrack == CDIO_INVALID_TRACK) || (firstLsn == CDIO_INVALID_LSN) ||
-        (lastLsn == CDIO_INVALID_LSN) || (lastLsn < firstLsn)) {
+    const track_t firstTrackNo = cdio_get_first_track_num(m_cdio.get());
+    const track_t lastTrackNo = cdio_get_last_track_num(m_cdio.get());
+    if ((firstTrackNo == CDIO_INVALID_TRACK) || (lastTrackNo == CDIO_INVALID_TRACK)) {
+        return false;
+    }
+
+    const track_t targetTrack = static_cast<track_t>(track);
+    if ((targetTrack < firstTrackNo) || (targetTrack > lastTrackNo)) {
+        return false;
+    }
+
+    const lsn_t firstLsn = cdio_get_track_lsn(m_cdio.get(), targetTrack);
+    const lsn_t lastLsn = cdio_get_track_last_lsn(m_cdio.get(), targetTrack);
+    if ((firstLsn == CDIO_INVALID_LSN) || (lastLsn == CDIO_INVALID_LSN) || (lastLsn < firstLsn)) {
         return false;
     }
 
     m_name = sourceName;
-    m_firstLsn = static_cast<int64_t>(firstLsn);
+    m_track = track;
+    m_startSector = static_cast<uint64_t>(firstLsn);
     m_totalSectors = static_cast<uint64_t>(lastLsn - firstLsn + 1);
-    m_curSector = 0;
+    m_curSector = m_startSector;
 
     FillMetaInfo();
     return true;

@@ -1,0 +1,35 @@
+本次任务：
+
+1、给 CCDSectorsStream 增加一个 m_track 成员，表示当前这组 CD 扇区对应的音轨编号，从 1 开始编号。
+2、CCDSectorsStream::Open 函数增加一个 uint32_t track 参数。
+3、MakeCDSectorsStream 函数增加一个 uint32_t track 参数。
+
+4、SectorSource 接口增加两个接口方法：
+virtual uint64_t GetStartSectors() const = 0; //获取 m_track 对应的起始逻辑扇区编号
+virtual uint32_t GetSectorsCount() const = 0; //获取 m_track 对应的扇区总数
+
+5、同步修改相关的测试代码
+
+/***********************************************************/
+
+已重新加载 todo_task.txt，并完成这轮改动。
+这次我把 CCDSectorsStream 和 SectorSource 按新设计同步改好了：
+- SectorSource 新增两个接口方法：include/core/StreamSectorSource.h:19
+- GetStartSectors() const
+- GetSectorsCount() const
+- CCDSectorsStream 增加 m_track 成员，并把起始扇区改为 m_startSector：include/core/CDSectorsStream.h:56
+- CCDSectorsStream::Open 改为带音轨参数：include/core/CDSectorsStream.h:25
+- 新签名：bool Open(const std::wstring& name, uint32_t track);
+- MakeCDSectorsStream 改为带音轨参数：include/core/CDSectorsStream.h:62
+- 新签名：std::unique_ptr<CDataStream> MakeCDSectorsStream(const std::wstring& name, uint32_t track);
+- CCDSectorsStream 实现同步更新：src/core/CDSectorsStream.cpp:81
+- Open/OpenImage/OpenDevice/InitFromOpenedCdio 全链路接收 track
+- 根据 track 计算该音轨的起始/结束逻辑扇区（cdio_get_track_lsn + cdio_get_track_last_lsn）
+- m_curSector 现在保存“逻辑扇区号”（绝对扇区），Tell/Seek 仍对外表现为流内偏移
+- 实现了 GetStartSectors/GetSectorsCount
+- 测试已同步更新：test/core/CDSectorsStreamTests.cpp:16
+- 新增对 GetStartSectors/GetSectorsCount 的检查
+- 新增 Open 的 track 参数校验场景（track=0、无效路径）
+- 同步 MakeCDSectorsStream 新参数场景
+说明：
+- 当前仓库里没有其他 SectorSource 实现类，因此本次接口变更未引入额外实现同步点。
