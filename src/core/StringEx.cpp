@@ -301,3 +301,19 @@ std::wstring ReplaceExtName(const std::wstring& filename, const std::wstring& ex
 
 	return substring;
 }
+
+bool IsAsciiLetter(wchar_t c)
+{
+    return ((c >= L'a') && (c <= L'z')) || ((c >= L'A') && (c <= L'Z'));
+}
+
+std::wstring ToLowerAscii(std::wstring value)
+{
+    std::transform(value.begin(), value.end(), value.begin(), [](wchar_t c) {
+        if ((c >= L'A') && (c <= L'Z')) {
+            return static_cast<wchar_t>(c - L'A' + L'a');
+        }
+        return c;
+    });
+    return value;
+}

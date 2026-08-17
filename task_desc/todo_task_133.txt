@@ -1,0 +1,20 @@
+本次任务：
+
+1、GetMetaInformation() 只需要返回 m_track 对应音轨的元信息。
+2、将 IsAsciiLetter 和 ToLowerAscii 函数移到 StringEx.h/StringEx.cpp 中。
+3、给 StringEx.h/StringEx.cpp 中的函数增加测试代码
+
+/***********************************************************/
+
+已完成本轮 todo_task.txt 的 3 项要求，改动如下：
+- GetMetaInformation() 现在只面向 m_track 对应音轨的元信息  
+- 在 CCDSectorsStream 填充元信息时，itemSequence 改为当前音轨号：src/core/CDSectorsStream.cpp:331  
+- CD-Text 读取改为仅查询当前音轨 m_track，不再用 disc/首轨兜底：src/core/CDSectorsStream.cpp:346、src/core/CDSectorsStream.cpp:41
+- 已将 IsAsciiLetter、ToLowerAscii 移到 StringEx  
+- 声明新增：include/core/StringEx.h:41  
+- 实现新增：src/core/StringEx.cpp:305  
+- CCDSectorsStream.cpp 删除本地同名函数，改为复用 StringEx：src/core/CDSectorsStream.cpp:9、src/core/CDSectorsStream.cpp:16
+- 已为 StringEx 新函数补充测试  
+- 新增测试文件：test/core/StringExTests.cpp:1  
+- 覆盖 IsAsciiLetter（字母/数字/符号/中文）和 ToLowerAscii（仅 ASCII 大写转小写）  
+- 已加入测试构建：test/CMakeLists.txt:14

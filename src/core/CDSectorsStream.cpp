@@ -6,25 +6,10 @@
 #include "AudioInfo.h"
 #include "CDSectorsStream.h"
 #include "MediaTagNames.h"
+#include "StringEx.h"
 #include "UnicodeConvert.h"
 
 namespace {
-
-bool IsAsciiLetter(wchar_t c)
-{
-    return ((c >= L'a') && (c <= L'z')) || ((c >= L'A') && (c <= L'Z'));
-}
-
-std::wstring ToLowerAscii(std::wstring value)
-{
-    std::transform(value.begin(), value.end(), value.begin(), [](wchar_t c) {
-        if ((c >= L'A') && (c <= L'Z')) {
-            return static_cast<wchar_t>(c - L'A' + L'a');
-        }
-        return c;
-    });
-    return value;
-}
 
 bool ParseDeviceDriveLetter(const std::wstring& name, wchar_t& driveLetter)
 {
@@ -53,26 +38,15 @@ bool ParseDeviceDriveLetter(const std::wstring& name, wchar_t& driveLetter)
     return checkWithPrefix(prefix1) || checkWithPrefix(prefix2);
 }
 
-void AddCdTextTag(CMediaTag& tag, const cdtext_t* cdText, cdtext_field_t field, const char* tagName)
+void AddCdTextTag(CMediaTag& tag, const cdtext_t* cdText, cdtext_field_t field, track_t track, const char* tagName)
 {
     if ((cdText == nullptr) || (tagName == nullptr)) {
         return;
     }
 
-    const char* discValue = cdtext_get_const(cdText, field, 0);
-    if ((discValue != nullptr) && (*discValue != '\0')) {
-        tag.AddTagString(tagName, discValue);
-        return;
-    }
-
-    const track_t firstTrack = cdtext_get_first_track(cdText);
-    if ((firstTrack == CDIO_INVALID_TRACK) || (firstTrack == 0)) {
-        return;
-    }
-
-    const char* firstTrackValue = cdtext_get_const(cdText, field, firstTrack);
-    if ((firstTrackValue != nullptr) && (*firstTrackValue != '\0')) {
-        tag.AddTagString(tagName, firstTrackValue);
+    const char* trackValue = cdtext_get_const(cdText, field, track);
+    if ((trackValue != nullptr) && (*trackValue != '\0')) {
+        tag.AddTagString(tagName, trackValue);
     }
 }
 
@@ -354,7 +328,7 @@ bool CCDSectorsStream::InitFromOpenedCdio(const std::wstring& sourceName, uint32
 void CCDSectorsStream::FillMetaInfo()
 {
     m_metaInfo.itemTag.Clear();
-    m_metaInfo.itemSequence = 0;
+    m_metaInfo.itemSequence = m_track;
     m_metaInfo.itemMediaType = "Audio CD";
     InitAudioFormat(&m_metaInfo.itemFormat, AudioDataFormat::PCM_S16, 2, 44100, 16);
 
@@ -369,8 +343,9 @@ void CCDSectorsStream::FillMetaInfo()
         return;
     }
 
-    AddCdTextTag(m_metaInfo.itemTag, cdText, CDTEXT_FIELD_TITLE, MediaTag_Title);
-    AddCdTextTag(m_metaInfo.itemTag, cdText, CDTEXT_FIELD_PERFORMER, MediaTag_Artists);
-    AddCdTextTag(m_metaInfo.itemTag, cdText, CDTEXT_FIELD_COMPOSER, MediaTag_Comment);
-    AddCdTextTag(m_metaInfo.itemTag, cdText, CDTEXT_FIELD_GENRE, MediaTag_Genre);
+    const track_t targetTrack = static_cast<track_t>(m_track);
+    AddCdTextTag(m_metaInfo.itemTag, cdText, CDTEXT_FIELD_TITLE, targetTrack, MediaTag_Title);
+    AddCdTextTag(m_metaInfo.itemTag, cdText, CDTEXT_FIELD_PERFORMER, targetTrack, MediaTag_Artists);
+    AddCdTextTag(m_metaInfo.itemTag, cdText, CDTEXT_FIELD_COMPOSER, targetTrack, MediaTag_Comment);
+    AddCdTextTag(m_metaInfo.itemTag, cdText, CDTEXT_FIELD_GENRE, targetTrack, MediaTag_Genre);
 }

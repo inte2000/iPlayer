@@ -38,5 +38,8 @@ std::string GetExtNameByMimeType(const std::string& mime);
 std::string ReplaceExtName(const std::string &filename, const std::string& extName);
 std::wstring ReplaceExtName(const std::wstring &filename, const std::wstring& extName);
 
+bool IsAsciiLetter(wchar_t c);
+std::wstring ToLowerAscii(std::wstring value);
+
 
 #endif //STRING_EX_H
