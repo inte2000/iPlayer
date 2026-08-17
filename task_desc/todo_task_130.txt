@@ -1,0 +1,21 @@
+把这次改动做一轮针对 wavpack 打开 .wvc 的最小运行验证
+
+
+
+/***********************************************************/
+
+已完成一轮最小运行验证，目标是确认 wavpack 在处理 .wv 时会走 .wvc 伴随流路径。
+我用现成样本 test_music/test.wv + test_music/test.wvc 做了 A/B 对比转换：
+- 场景 A（有 .wvc）：  
+imPlayer.exe --convert --filename=verify_wvc/test.wv --out=verify_wvc/with_wvc.wav ...
+- 场景 B（临时移走 .wvc）：  
+imPlayer.exe --convert --filename=verify_wvc/test.wv --out=verify_wvc/no_wvc.wav ...
+- 比较结果（同长度，不同内容）：
+- verify_wvc/with_wvc.wav 大小 896408，SHA256 799D466618BB1ABEA4FCA135DF2B2506DEE136707BFAF335A0DC1FC827FFCF73
+- verify_wvc/no_wvc.wav 大小 896408，SHA256 83C77150C4C48708785E2D3FB5C947123A99300FE80DED0057FDF7308A5F76B9
+- hash_equal=False
+结论：在有 .wvc 时解码结果与无 .wvc 时不同，说明 .wvc 已被成功发现并参与解码流程，新的 MateSource::CreateMateStream 路径在运行时有效。
+产物位置：
+- build/debug/bin/verify_wvc/with_wvc.wav
+- build/debug/bin/verify_wvc/no_wvc.wav
+（我已把临时改名的 test.wvc.bak 恢复为 test.wvc。）
