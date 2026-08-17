@@ -5,4 +5,5 @@ Write(const void* pBuf, uint32_t size, uint32_t timeout = 0): 将 pBuf 中的数
 GetLength(): 返回流的长度。对于无固定长度的流，比如网络流，返回 -1
 Seek(SeekBase base, long long off): Seek 到流中指定的位置，SeekBase 有相关位置信息定义
 Tell() : 返回当前流的位置
-GetAccompanyStream(const std::wstring& name) : 得到当前流对象的伴生流，一些网络流会有伴生流，一些文件也会有伴生文件，用这个接口获取伴生的 DataStream 对象
+QuerySource 查询支持的接口，当前可能支持的接口是 MetaSource、SectorSource 或 MateSource
+

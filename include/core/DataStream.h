@@ -46,7 +46,6 @@ public:
     virtual std::size_t GetLength() const = 0;
     virtual void Seek(SeekBase base, long long off) = 0;
     virtual std::size_t Tell() = 0;
-    virtual std::unique_ptr<CDataStream> GetAccompanyStream(const std::wstring& name) const = 0;
 protected:
     DataStreamStyle m_style;
     std::wstring m_name;

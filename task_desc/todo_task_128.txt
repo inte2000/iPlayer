@@ -1,0 +1,41 @@
+本次任务是修改 DataStream 的设计，具体要求是：
+
+1、把下面 MateSource 接口的定义放在一个独立的头文件中，文件名为 StreamMateSource.h。MateSource 接口的定义是：
+
+struct MateSource
+{
+    DataStream* CreateMateStream(const wchar_t* name) = 0;
+    void ReleaseMateStream(DataStream &*stream) = 0;
+};
+
+2、从 DataStream 中删除 GetAccompanyStream 接口方法。CMemoryBufStream 不需要支持 MateSource，直接删除 GetAccompanyStream 接口函数。CFileStream 支持 MateSource 接口，需要将 CFileStream 的定义改成多继承方式，增加对 MateSource  接口的支持。参考 CFileStream::GetAccompanyStream 的实现代码实现 CFileStream::CreateMateStream， CFileStream::ReleaseMateStream 的工作是正常释放 DataStream 流对象，并将 stream 赋值为 nullptr。
+
+3、修改 WavpackPlayCtrl::OpenWvcStream 的实现，适配新的 FileStream 设计，通过 QuerySource 获取 MateSource 接口，然后再通过 CreateMateStream 获得 WvcStream，最后别忘记调用 ReleaseMateStream 手工释放WvcStream
+
+/***********************************************************/
+
+已按 todo_task.txt 的要求完成 DataStream/MateSource 相关改造，并同步改了 WavPack 适配逻辑与测试。
+- 新增独立接口头文件 include/core/StreamMateSource.h:1，定义了 MateSource，包含：
+- CreateMateStream(const wchar_t* name)
+- ReleaseMateStream(CDataStream*& stream)（释放后置空）
+- 从 DataStream 删除了伴随流接口：include/core/DataStream.h:44（已移除 GetAccompanyStream 纯虚函数）
+- CMemoryBufStream 不再实现伴随流接口：include/core/MemBufStream.h:26
+- CFileStream 改为多继承 CDataStream + MateSource：include/core/FileStream.h:9
+- 新增 CreateMateStream / ReleaseMateStream 声明：include/core/FileStream.h:29
+- 实现沿用原伴随流逻辑，按当前文件目录生成 mate 文件流：src/core/FileStream.cpp:126
+- ReleaseMateStream 负责删除对象并置空指针：src/core/FileStream.cpp:143
+- WavpackPlayCtrl::OpenWvcStream 已按新设计改造：wavpack_decoder/WavpackPlayCtrl.cpp:572
+- 先 QuerySource<MateSource>()
+- 再 CreateMateStream(...) 获取 .wvc 流
+- 在 Release() 中通过 ReleaseMateStream 手工释放：wavpack_decoder/WavpackPlayCtrl.cpp:129
+- 对应成员从 unique_ptr 改为 MateSource* + CDataStream*：wavpack_decoder/WavpackPlayCtrl.h:73
+- 补充测试（按仓库要求新增测试）：
+- 新增 test/core/FileStreamMateSourceTests.cpp:1
+- 验证 CFileStream 可创建并释放 mate stream
+- 验证 CMemoryBufStream 不暴露 MateSource
+- 测试目标已加入 test/CMakeLists.txt:8
+我还执行了配置和构建命令（按 .vscode/tasks.json 参数）：
+- cmake -S . -B build/debug ...
+- cmake -S . -B build/test ...
+- cmake --build build/debug --target imPlayer
+- cmake --build build/test --target imPlayerTests

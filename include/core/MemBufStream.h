@@ -28,9 +28,6 @@ public:
     std::size_t GetLength() const override { return m_length; }
     void Seek(SeekBase base, long long off) override;
     std::size_t Tell() override { return m_curPos; }
-    std::unique_ptr<CDataStream> GetAccompanyStream(const std::wstring& name) const override {
-        return nullptr;
-    }
 protected:
     bool ResetSize(std::size_t newSize);
 private:

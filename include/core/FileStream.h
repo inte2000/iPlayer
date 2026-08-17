@@ -4,8 +4,9 @@
 #include <string>
 #include <fstream>
 #include "DataStream.h"
+#include "StreamMateSource.h"
 
-class CFileStream : public CDataStream
+class CFileStream : public CDataStream, public MateSource
 {
 public:
     CFileStream(bool bReadOnly = true) {
@@ -25,7 +26,8 @@ public:
     std::size_t GetLength() const override;
     void Seek(SeekBase base, long long off) override;
     std::size_t Tell() override;
-    std::unique_ptr<CDataStream> GetAccompanyStream(const std::wstring& name) const override;
+    CDataStream* CreateMateStream(const wchar_t* name) override;
+    void ReleaseMateStream(CDataStream*& stream) override;
 private:
     std::size_t m_length;
     std::size_t m_curPos;
