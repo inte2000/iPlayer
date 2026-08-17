@@ -26,8 +26,7 @@ public:
     std::size_t GetLength() const override;
     void Seek(SeekBase base, long long off) override;
     std::size_t Tell() override;
-    CDataStream* CreateMateStream(const wchar_t* name) override;
-    void ReleaseMateStream(CDataStream*& stream) override;
+    std::unique_ptr<CDataStream> CreateMateStream(const wchar_t* name) override;
 private:
     std::size_t m_length;
     std::size_t m_curPos;

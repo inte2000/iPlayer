@@ -123,7 +123,7 @@ std::size_t CFileStream::Tell()
     return m_curPos; 
 }
 
-CDataStream* CFileStream::CreateMateStream(const wchar_t* name)
+std::unique_ptr<CDataStream> CFileStream::CreateMateStream(const wchar_t* name)
 {
     if (name == nullptr)
         return nullptr;
@@ -133,17 +133,10 @@ CDataStream* CFileStream::CreateMateStream(const wchar_t* name)
 
     if (std::filesystem::exists(pathname))
     {
-        auto mateStream = MakeFileStream(pathname.wstring(), true);
-        return mateStream.release();
+        return MakeFileStream(pathname.wstring(), true);
     }
 
     return nullptr;
-}
-
-void CFileStream::ReleaseMateStream(CDataStream*& stream)
-{
-    delete stream;
-    stream = nullptr;
 }
 
 #if 0

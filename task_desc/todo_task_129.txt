@@ -1,0 +1,22 @@
+将 MateSource 的接口定义改成 
+
+struct MateSource
+{
+    std::unique_ptr<CDataStream> CreateMateStream(const wchar_t* name) = 0;
+};
+
+
+
+/***********************************************************/
+
+已重新加载 todo_task.txt，并按新要求完成改造：MateSource 现在只保留返回 std::unique_ptr<CDataStream> 的 CreateMateStream 接口。
+- 已将接口改为你指定形式：include/core/StreamMateSource.h:8
+- struct MateSource { virtual std::unique_ptr<CDataStream> CreateMateStream(const wchar_t* name) = 0; };
+- CFileStream 已同步适配新签名：include/core/FileStream.h:29、src/core/FileStream.cpp:126
+- 删除了 ReleaseMateStream，CreateMateStream 直接返回 unique_ptr
+- WavpackPlayCtrl 已同步回收为 unique_ptr 流管理：wavpack_decoder/WavpackPlayCtrl.h:68、wavpack_decoder/WavpackPlayCtrl.cpp:567
+- OpenWvcStream 改为返回 std::unique_ptr<CDataStream>
+- 通过 QuerySource<MateSource>() 后直接调用 CreateMateStream
+- 删除手工释放逻辑，恢复 RAII 管理（m_wvcStream.reset()）
+- 测试已更新为新接口：test/core/FileStreamMateSourceTests.cpp:28
+- 去掉 ReleaseMateStream 调用，改为 std::unique_ptr<CDataStream> 持有
