@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <memory>
 
 #include "FileStream.h"
 #include "MemBufStream.h"
@@ -25,7 +26,7 @@ void WriteFile(const std::filesystem::path& path, const char* data)
 
 } // namespace
 
-TEST_CASE("CFileStream supports MateSource create/release", "[core][stream][mate]")
+TEST_CASE("CFileStream supports MateSource create", "[core][stream][mate]")
 {
     const auto testDir = CreateTestDir();
     const auto sourcePath = testDir / "track.wv";
@@ -40,15 +41,12 @@ TEST_CASE("CFileStream supports MateSource create/release", "[core][stream][mate
     auto* mateSource = sourceStream.QuerySource<MateSource>();
     REQUIRE(mateSource != nullptr);
 
-    CDataStream* mateStream = mateSource->CreateMateStream(L"track.wvc");
+    std::unique_ptr<CDataStream> mateStream = mateSource->CreateMateStream(L"track.wvc");
     REQUIRE(mateStream != nullptr);
     CHECK(mateStream->GetName() == matePath.wstring());
 
     char readBuf[4] = {};
     CHECK(mateStream->Read(readBuf, static_cast<uint32_t>(sizeof(readBuf))) == sizeof(readBuf));
-
-    mateSource->ReleaseMateStream(mateStream);
-    CHECK(mateStream == nullptr);
 
     std::filesystem::remove(matePath);
     std::filesystem::remove(sourcePath);

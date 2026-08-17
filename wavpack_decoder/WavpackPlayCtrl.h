@@ -14,6 +14,7 @@
 #include <wavpack/wavpack.h>
 
 #include "DataStream.h"
+#include "StreamMateSource.h"
 #include "AudioInfo.h"
 #include "MediaTag.h"
 
@@ -63,10 +64,10 @@ private:
     static int TruncateHere(void* id);
     static int CloseReader(void* id);
 
- 	void InitStreamSource(StreamSource& source, CDataStream* pStream);
-	std::unique_ptr<CDataStream> OpenWvcStream(CDataStream* pStream);
-	void InitWavpackReader(WavpackStreamReader64& reader);
-	std::string ReadTagValue(const char* key) const;
+    void InitStreamSource(StreamSource& source, CDataStream* pStream);
+    std::unique_ptr<CDataStream> OpenWvcStream(CDataStream* pStream);
+    void InitWavpackReader(WavpackStreamReader64& reader);
+    std::string ReadTagValue(const char* key) const;
 
 private:
     CDataStream* m_stream;

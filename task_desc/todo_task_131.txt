@@ -1,0 +1,62 @@
+本次任务是完成 CCDSectorsStream  类的实现，这个类的部分定义如下：
+
+class CCDSectorsStream : public DataStream, 
+                       public MetaSource,
+                       public SectorSource
+{
+public：
+    bool Open(const std::wstring& name);
+    bool Cloase();
+
+protected:
+    bool OpenImage(const std::wstring& imgFile);
+    bool OpenDevice(const std::wstring& deviceName);
+private:
+    DsMetaInfo m_metaInfo;
+};
+
+具体要求：
+
+1、通过 cmake/FindLibcdio.cmake 引入 libcdio 库的支持。
+2、Open 函数根据 name 的格式判断是光盘设备还是映像文件，如果名字格式是 \\device\X: 的形式，其中 X 是26 个英文字母，则是光盘设备。
+3、libcdio 如果打开成功，则认为是 AudioCD，其他格式的光盘暂时先返回 false。
+4、打开成功后尝试读取 cdtext 信息，存入 m_metaInfo，MetaSource 接口的实现可使用这个MediaTag获取数据。对于 AudioCD，DsMetaInfo::itemFormat 可认为就是 16位 PCM 音频，采样率为 44100 Hz。
+5、利用 libcdio 实现 SectorSource 接口，暂时只支持 SectorSourceType::AudioCD 即可
+6、DataStream的接口可用利用 SectorSource 接口实现，保证二者的换算。为了简化换算，CCDSectorsStream 内可存储一个当前扇区逻辑编号，表示当前读取数据将从这个扇区开始。 DataStream::Read(void* pBuf, uint32_t size, uint32_t timeout = 0) 从这个扇区开始读，根据 size 圆整到整数个扇区，返回实际读取的数据字节数（读取的完整扇区数 x 扇区大小）。DataStream::Seek 的位置必须是扇区大小的整数倍位置。
+
+
+/***********************************************************/
+
+已重新加载 todo_task.txt，并完成了 CCDSectorsStream 的实现与构建接入，覆盖你列的 6 点要求。
+- 新增 CCDSectorsStream 类定义与实现：
+- include/core/CDSectorsStream.h:16
+- src/core/CDSectorsStream.cpp:91
+- 通过 CMake 引入并链接 libcdio：
+- src/core/CMakeLists.txt:46
+- 新增最小单元测试（设备名格式 + 扇区对齐 seek 规则）：
+- test/core/CDSectorsStreamTests.cpp:5
+- test/CMakeLists.txt:11
+这次实现的要点如下：
+- Open() 按名称格式分流：
+- \\device\\X: 或 \\\\device\\X:（X 为英文字母）走设备打开
+- 其他走镜像文件打开
+- 见 src/core/CDSectorsStream.cpp:115、src/core/CDSectorsStream.cpp:30
+- libcdio 打开成功后只接受 Audio CD：
+- 检查 cdio_get_discmode()，仅 CDIO_DISC_MODE_CD_DA / CDIO_DISC_MODE_CD_DAP 通过
+- 见 src/core/CDSectorsStream.cpp:301
+- MetaSource 实现：
+- GetMetaInformation() 返回 m_metaInfo
+- 默认写入 Audio CD / PCM S16 / 44.1kHz / 2ch 信息
+- 尝试读取 CD-Text（标题/艺术家/流派等）写入 CMediaTag
+- 见 src/core/CDSectorsStream.cpp:215、src/core/CDSectorsStream.cpp:323
+- SectorSource 实现（当前只支持 AudioCD）：
+- Type() 返回 SectorSourceType::AudioCD
+- SectorSize() 返回 CDIO_CD_FRAMESIZE_RAW（2352）
+- ReadSectors() 用 cdio_read_audio_sectors()
+- 见 src/core/CDSectorsStream.cpp:223、src/core/CDSectorsStream.cpp:245、src/core/CDSectorsStream.cpp:228
+- DataStream 与扇区换算实现：
+- 内部维护当前逻辑扇区 m_curSector
+- Read() 从当前扇区开始，按 size 向上取整到整扇区读取，返回 完整扇区数 * 扇区大小
+- Seek() 强制要求目标偏移是扇区大小整数倍
+- 见 src/core/CDSectorsStream.cpp:144、src/core/CDSectorsStream.cpp:176
+

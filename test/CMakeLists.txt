@@ -8,6 +8,7 @@ find_package(nlohmann_json CONFIG REQUIRED)
 add_executable(imPlayerTests
     main.cpp
     core/CoreTests.cpp
+    core/CDSectorsStreamTests.cpp
     core/FileStreamMateSourceTests.cpp
     core/MediaTagTests.cpp
     core/UnicodeConvertTests.cpp

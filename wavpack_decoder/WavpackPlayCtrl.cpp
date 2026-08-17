@@ -89,6 +89,7 @@ int32_t F32ToS32(float sample)
 
 WavpackPlayCtrl::WavpackPlayCtrl()
     : m_stream(nullptr)
+    , m_wvcStream(nullptr)
     , m_ctx(nullptr)
     , m_curFrames(0)
     , m_totalFrames(0)
@@ -565,11 +566,20 @@ void WavpackPlayCtrl::InitStreamSource(StreamSource& source, CDataStream* pStrea
 
 std::unique_ptr<CDataStream> WavpackPlayCtrl::OpenWvcStream(CDataStream* pStream)
 {
+    if (pStream == nullptr) {
+        return nullptr;
+    }
+
+    MateSource* source = pStream->QuerySource<MateSource>();
+    if (source == nullptr) {
+        return nullptr;
+    }
+
     std::filesystem::path sourcePath{ pStream->GetName() };
     if (sourcePath.has_filename()) {
         auto accompanyName = sourcePath.filename();
         accompanyName.replace_extension(L".wvc");
-        return pStream->GetAccompanyStream(accompanyName.wstring());
+        return source->CreateMateStream(accompanyName.c_str());
     }
 
     return nullptr;

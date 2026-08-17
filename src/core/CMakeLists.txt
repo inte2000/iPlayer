@@ -8,6 +8,7 @@ add_library(core STATIC
     UnicodeNormalize.cpp
     UnicodeConvert.cpp
     FileStream.cpp
+    CDSectorsStream.cpp
     MemBufStream.cpp
     ConvertFormat.cpp
     AudioConvert.cpp
@@ -41,6 +42,9 @@ find_package(FFMPEG REQUIRED)
   target_include_directories(core PRIVATE ${FFMPEG_INCLUDE_DIRS})
   target_link_directories(core PRIVATE ${FFMPEG_LIBRARY_DIRS})
   target_link_libraries(core PRIVATE ${FFMPEG_LIBRARIES})
+
+find_package(libcdio REQUIRED)
+  target_link_libraries(core PRIVATE libcdio::libcdio)
 
 # get_target_property(_incs core INCLUDE_DIRECTORIES)
 # message(STATUS "core includes = ${_incs}")
