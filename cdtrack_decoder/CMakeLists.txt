@@ -3,6 +3,8 @@ cmake_minimum_required(VERSION 3.21)
 project(cdtrack_decoder)
 
 add_library(cdtrack_decoder SHARED
+    DataBuffer.cpp
+    CDTrackDecoderControl.cpp
     PlugMain.cpp
 )
 

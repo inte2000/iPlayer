@@ -1,0 +1,30 @@
+本次任务是继续重构 cdtrack_decoder 插件项目。
+
+1、将 DataBuffer 类的代码拆到 DataBuffer.h/DataBuffer.cpp 文件中维护。
+2、将 DecoderControl 类更名为 CDTrackDecoderControl，并将代码拆到CDTrackDecoderControl.h/CDTrackDecoderControl.cpp 文件中维护。
+3、CAudioCD 是一个第三方设计的对 libcdio 操作的封装，代码文件已经放在 core 模块中，将这个类添加到 core 模块的编译，并用这个类重构 CCDSectorsStream。
+
+
+/***********************************************************/
+
+已重新加载 todo_task.txt，并完成这轮“继续重构”任务。
+这次主要做了三块：
+- DataBuffer 独立拆分  
+- 新增 cdtrack_decoder/DataBuffer.h  
+- 新增 cdtrack_decoder/DataBuffer.cpp  
+- 功能保持为滑动窗口 PCM 缓冲（4~8MB 窗口，超窗重映射并用 SectorSource::ReadSectors 重新取数）
+- DecoderControl 更名并独立拆分为 CDTrackDecoderControl  
+- 新增 cdtrack_decoder/CDTrackDecoderControl.h  
+- 新增 cdtrack_decoder/CDTrackDecoderControl.cpp  
+- PlugMain 中上下文改为持有 std::unique_ptr<CDTrackDecoderControl>，所有 start/decode/seek/meta/status 都通过该控制器  
+- Plug_IsSupportOutput 改为调用 CDTrackDecoderControl::IsSupportOutputFormat(...)
+- 用 CAudioCD 重构 CCDSectorsStream，并把 CAudioCD 加入 core 编译  
+- src/core/CMakeLists.txt:7 已加入 AudioCD.cpp  
+- include/core/CDSectorsStream.h：成员从 m_cdio 改为 std::unique_ptr<CAudioCD> m_audioCD，初始化入口改为 InitFromOpenedAudioCD(...)  
+- src/core/CDSectorsStream.cpp：移除直接 libcdio 调用，改为通过 CAudioCD 提供的 Open/GetTrackInfo/ReadTrack/GetTrackTitle... 完成开流、扇区读取和元信息填充  
+- ReadSectors 现在通过 CAudioCD::ReadTrack(...) 实现
+另外同步了 cdtrack_decoder 工程编译源：
+- cdtrack_decoder/CMakeLists.txt:5 添加了 DataBuffer.cpp 和 CDTrackDecoderControl.cpp
+如果你愿意，我下一步可以继续做一轮针对 cdtrack_decoder 的最小运行验证清单（只验证 start/decode/seek 路径和窗口重映射行为）。
+
+

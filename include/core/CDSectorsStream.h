@@ -10,7 +10,7 @@
 #include "StreamMetaSource.h"
 #include "StreamSectorSource.h"
 
-typedef struct _CdIo CdIo_t;
+class CAudioCD;
 
 class CCDSectorsStream : public CDataStream,
                          public MetaSource,
@@ -45,13 +45,11 @@ protected:
     bool OpenDevice(const std::wstring& deviceName, uint32_t track);
 
 private:
-    using CdioDeleter = void(*)(CdIo_t*);
-
-    bool InitFromOpenedCdio(const std::wstring& sourceName, uint32_t track);
+    bool InitFromOpenedAudioCD(const std::wstring& sourceName, uint32_t track);
     void FillMetaInfo();
 
 private:
-    std::unique_ptr<CdIo_t, CdioDeleter> m_cdio;
+    std::unique_ptr<CAudioCD> m_audioCD;
     DsMetaInfo m_metaInfo;
     uint32_t m_track;
     uint64_t m_curSector;

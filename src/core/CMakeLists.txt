@@ -4,6 +4,7 @@ project(core)
 
 add_library(core STATIC
     AudioInfo.cpp
+    AudioCD.cpp
     StringEx.cpp
     UnicodeNormalize.cpp
     UnicodeConvert.cpp

@@ -1,8 +1,7 @@
 #include <algorithm>
 #include <cstdint>
 
-#include <cdio/cdio.h>
-
+#include "AudioCD.h"
 #include "AudioInfo.h"
 #include "CDSectorsStream.h"
 #include "MediaTagNames.h"
@@ -38,18 +37,6 @@ bool ParseDeviceDriveLetter(const std::wstring& name, wchar_t& driveLetter)
     return checkWithPrefix(prefix1) || checkWithPrefix(prefix2);
 }
 
-void AddCdTextTag(CMediaTag& tag, const cdtext_t* cdText, cdtext_field_t field, track_t track, const char* tagName)
-{
-    if ((cdText == nullptr) || (tagName == nullptr)) {
-        return;
-    }
-
-    const char* trackValue = cdtext_get_const(cdText, field, track);
-    if ((trackValue != nullptr) && (*trackValue != '\0')) {
-        tag.AddTagString(tagName, trackValue);
-    }
-}
-
 } // namespace
 
 std::unique_ptr<CDataStream> MakeCDSectorsStream(const std::wstring& name, uint32_t track)
@@ -62,7 +49,7 @@ std::unique_ptr<CDataStream> MakeCDSectorsStream(const std::wstring& name, uint3
 }
 
 CCDSectorsStream::CCDSectorsStream()
-    : m_cdio(nullptr, cdio_destroy)
+    : m_audioCD(nullptr)
     , m_metaInfo{}
     , m_track(0)
     , m_curSector(0)
@@ -103,7 +90,11 @@ bool CCDSectorsStream::Open(const std::wstring& name, uint32_t track)
 
 bool CCDSectorsStream::Close()
 {
-    m_cdio.reset();
+    if (m_audioCD) {
+        m_audioCD->Close();
+        m_audioCD.reset();
+    }
+
     m_name.clear();
     m_track = 0;
     m_curSector = 0;
@@ -193,9 +184,10 @@ std::size_t CCDSectorsStream::Tell()
 
 const DsMetaInfo* CCDSectorsStream::GetMetaInformation() const
 {
-    if (!m_cdio) {
+    if (!m_audioCD) {
         return nullptr;
     }
+
     return &m_metaInfo;
 }
 
@@ -216,7 +208,7 @@ uint32_t CCDSectorsStream::GetSectorsCount() const
 
 uint32_t CCDSectorsStream::ReadSectors(uint64_t startNo, uint32_t count, void* buf) const
 {
-    if (!m_cdio || (buf == nullptr) || (count == 0) || (startNo < m_startSector)) {
+    if (!m_audioCD || (buf == nullptr) || (count == 0) || (startNo < m_startSector)) {
         return 0;
     }
 
@@ -227,18 +219,17 @@ uint32_t CCDSectorsStream::ReadSectors(uint64_t startNo, uint32_t count, void* b
 
     const uint64_t left = endSector - startNo;
     const uint32_t realCount = static_cast<uint32_t>(std::min<uint64_t>(left, count));
-    const lsn_t lsn = static_cast<lsn_t>(startNo);
-    const driver_return_code_t drc = cdio_read_audio_sectors(m_cdio.get(), buf, lsn, realCount);
-    if (drc != DRIVER_OP_SUCCESS) {
-        return 0;
-    }
-
-    return realCount;
+    const uint32_t readBytes = m_audioCD->ReadTrack(m_track - 1,
+                                                    static_cast<int32_t>(startNo - m_startSector),
+                                                    realCount,
+                                                    static_cast<uint8_t*>(buf),
+                                                    realCount * SectorSize());
+    return readBytes / SectorSize();
 }
 
 uint32_t CCDSectorsStream::SectorSize() const
 {
-    return CDIO_CD_FRAMESIZE_RAW;
+    return RAW_SECTOR_SIZE;
 }
 
 uint32_t CCDSectorsStream::SeekToSector(uint64_t sectorNo)
@@ -254,17 +245,13 @@ uint32_t CCDSectorsStream::SeekToSector(uint64_t sectorNo)
 
 bool CCDSectorsStream::OpenImage(const std::wstring& imgFile, uint32_t track)
 {
-    const std::string source = Utf16LeToLocalMBCS(imgFile);
-    if (source.empty()) {
+    m_audioCD = std::make_unique<CAudioCD>();
+    if (!m_audioCD->Open(imgFile)) {
+        m_audioCD.reset();
         return false;
     }
 
-    m_cdio.reset(cdio_open(source.c_str(), DRIVER_UNKNOWN));
-    if (!m_cdio) {
-        return false;
-    }
-
-    return InitFromOpenedCdio(imgFile, track);
+    return InitFromOpenedAudioCD(imgFile, track);
 }
 
 bool CCDSectorsStream::OpenDevice(const std::wstring& deviceName, uint32_t track)
@@ -274,51 +261,38 @@ bool CCDSectorsStream::OpenDevice(const std::wstring& deviceName, uint32_t track
         return false;
     }
 
-    std::wstring openName;
+    std::wstring openName = L"CDDevice--";
     openName.push_back(driveLetter);
     openName.push_back(L':');
 
-    const std::string source = Utf16LeToLocalMBCS(openName);
-    m_cdio.reset(cdio_open_cd(source.c_str()));
-    if (!m_cdio) {
+    m_audioCD = std::make_unique<CAudioCD>();
+    if (!m_audioCD->Open(openName)) {
+        m_audioCD.reset();
         return false;
     }
 
-    return InitFromOpenedCdio(deviceName, track);
+    return InitFromOpenedAudioCD(deviceName, track);
 }
 
-bool CCDSectorsStream::InitFromOpenedCdio(const std::wstring& sourceName, uint32_t track)
+bool CCDSectorsStream::InitFromOpenedAudioCD(const std::wstring& sourceName, uint32_t track)
 {
-    if (!m_cdio) {
+    if (!m_audioCD || !m_audioCD->IsOpened()) {
         return false;
     }
 
-    const discmode_t mode = cdio_get_discmode(m_cdio.get());
-    if ((mode != CDIO_DISC_MODE_CD_DA) && (mode != CDIO_DISC_MODE_CD_DAP)) {
+    if ((track == 0) || (track > m_audioCD->GetTrackCount())) {
         return false;
     }
 
-    const track_t firstTrackNo = cdio_get_first_track_num(m_cdio.get());
-    const track_t lastTrackNo = cdio_get_last_track_num(m_cdio.get());
-    if ((firstTrackNo == CDIO_INVALID_TRACK) || (lastTrackNo == CDIO_INVALID_TRACK)) {
-        return false;
-    }
-
-    const track_t targetTrack = static_cast<track_t>(track);
-    if ((targetTrack < firstTrackNo) || (targetTrack > lastTrackNo)) {
-        return false;
-    }
-
-    const lsn_t firstLsn = cdio_get_track_lsn(m_cdio.get(), targetTrack);
-    const lsn_t lastLsn = cdio_get_track_last_lsn(m_cdio.get(), targetTrack);
-    if ((firstLsn == CDIO_INVALID_LSN) || (lastLsn == CDIO_INVALID_LSN) || (lastLsn < firstLsn)) {
+    const CD_TRACK_INFO& trackInfo = m_audioCD->GetTrackInfo(track - 1);
+    if (!trackInfo.isAudio || (trackInfo.length <= 0)) {
         return false;
     }
 
     m_name = sourceName;
     m_track = track;
-    m_startSector = static_cast<uint64_t>(firstLsn);
-    m_totalSectors = static_cast<uint64_t>(lastLsn - firstLsn + 1);
+    m_startSector = static_cast<uint64_t>(trackInfo.lsn);
+    m_totalSectors = static_cast<uint64_t>(trackInfo.length);
     m_curSector = m_startSector;
 
     FillMetaInfo();
@@ -338,14 +312,23 @@ void CCDSectorsStream::FillMetaInfo()
     m_metaInfo.itemTag.AddTagInteger(MediaTag_SamplesRate, 44100);
     m_metaInfo.itemTag.AddTagInteger(MediaTag_BitsPerSample, 16);
 
-    cdtext_t* cdText = cdio_get_cdtext(m_cdio.get());
-    if (cdText == nullptr) {
+    if (!m_audioCD || (m_track == 0)) {
         return;
     }
 
-    const track_t targetTrack = static_cast<track_t>(m_track);
-    AddCdTextTag(m_metaInfo.itemTag, cdText, CDTEXT_FIELD_TITLE, targetTrack, MediaTag_Title);
-    AddCdTextTag(m_metaInfo.itemTag, cdText, CDTEXT_FIELD_PERFORMER, targetTrack, MediaTag_Artists);
-    AddCdTextTag(m_metaInfo.itemTag, cdText, CDTEXT_FIELD_COMPOSER, targetTrack, MediaTag_Comment);
-    AddCdTextTag(m_metaInfo.itemTag, cdText, CDTEXT_FIELD_GENRE, targetTrack, MediaTag_Genre);
+    const uint32_t index = m_track - 1;
+    const std::wstring title = m_audioCD->GetTrackTitle(index);
+    if (!title.empty()) {
+        m_metaInfo.itemTag.AddTagString(MediaTag_Title, Utf16ToUtf8(title));
+    }
+
+    const std::wstring artist = m_audioCD->GetTrackArtist(index);
+    if (!artist.empty()) {
+        m_metaInfo.itemTag.AddTagString(MediaTag_Artists, Utf16ToUtf8(artist));
+    }
+
+    const std::wstring album = m_audioCD->GetTrackAlbum(index);
+    if (!album.empty()) {
+        m_metaInfo.itemTag.AddTagString(MediaTag_Album, Utf16ToUtf8(album));
+    }
 }

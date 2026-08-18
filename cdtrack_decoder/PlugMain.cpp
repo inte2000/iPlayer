@@ -1,23 +1,15 @@
-#include <algorithm>
-#include <cstdint>
 #include <cstring>
 #include <memory>
-#include <vector>
 
 #include <windows.h>
 
+#include "CDTrackDecoderControl.h"
 #include "PlugMain.h"
-#include "StreamMetaSource.h"
-#include "StreamSectorSource.h"
 
 const char8_t* plugname = u8"CD Track decoder";
 const char8_t* plugpublisher = u8"imPlayer Group";
 
 namespace {
-
-constexpr std::size_t kWindowSizeMin = 4 * 1024 * 1024;
-constexpr std::size_t kWindowSizeMax = 8 * 1024 * 1024;
-constexpr std::size_t kDefaultWindowSize = kWindowSizeMin;
 
 char errorMsg[256] = {};
 
@@ -28,309 +20,14 @@ typedef struct tagFileExtRegItem
     const char* extList;
 } FileExtRegItem;
 
-static void InitSourceAudioFormat(AudioFormat& fmt)
-{
-    InitAudioFormat(&fmt, AudioDataFormat::PCM_S16, 2, 44100, 16);
-}
-
-static bool IsSupportS16Stereo(const AudioFormat* audioFmt)
-{
-    if (audioFmt == nullptr) {
-        return false;
-    }
-
-    if (audioFmt->format != AudioDataFormat::PCM_S16) {
-        return false;
-    }
-    if (audioFmt->numChannels != 2) {
-        return false;
-    }
-    if ((audioFmt->bitsPerSample != 0) && (audioFmt->bitsPerSample != 16)) {
-        return false;
-    }
-
-    return true;
-}
-
-static void ConvertCDAudioToLittleEndian(uint8_t* data, uint32_t bytes)
-{
-    if (data == nullptr) {
-        return;
-    }
-
-    const uint32_t convertBytes = bytes - (bytes % 2);
-    for (uint32_t i = 0; i < convertBytes; i += 2)
-    {
-        const uint8_t high = data[i];
-        data[i] = data[i + 1];
-        data[i + 1] = high;
-    }
-}
-
-class DataBuffer
-{
-public:
-    DataBuffer(SectorSource* source,
-               uint64_t startSector,
-               uint32_t sectorSize,
-               std::size_t totalSize,
-               std::size_t windowSize)
-        : m_source(source)
-        , m_startSector(startSector)
-        , m_sectorSize(sectorSize)
-        , m_totalSize(totalSize)
-        , m_windowSize(std::clamp(windowSize, kWindowSizeMin, kWindowSizeMax))
-        , m_position(0)
-        , m_windowOffset(0)
-        , m_windowValidBytes(0)
-    {
-    }
-
-    bool Reset()
-    {
-        m_position = 0;
-        m_window.clear();
-        m_windowOffset = 0;
-        m_windowValidBytes = 0;
-        return true;
-    }
-
-    bool Seek(std::size_t pos)
-    {
-        if (pos > m_totalSize) {
-            return false;
-        }
-        m_position = pos;
-        return true;
-    }
-
-    std::size_t Tell() const
-    {
-        return m_position;
-    }
-
-    std::size_t TotalSize() const
-    {
-        return m_totalSize;
-    }
-
-    uint32_t Read(void* dst, uint32_t bytes)
-    {
-        if ((dst == nullptr) || (bytes == 0) || (m_position >= m_totalSize)) {
-            return 0;
-        }
-
-        uint8_t* out = static_cast<uint8_t*>(dst);
-        std::size_t copied = 0;
-        std::size_t remain = std::min<std::size_t>(bytes, m_totalSize - m_position);
-        while (remain > 0)
-        {
-            if (!EnsureWindowFor(m_position)) {
-                break;
-            }
-
-            const std::size_t inWindow = m_position - m_windowOffset;
-            if (inWindow >= m_windowValidBytes) {
-                break;
-            }
-
-            const std::size_t available = m_windowValidBytes - inWindow;
-            const std::size_t chunk = std::min(available, remain);
-            std::memcpy(out + copied, m_window.data() + inWindow, chunk);
-
-            copied += chunk;
-            remain -= chunk;
-            m_position += chunk;
-        }
-
-        return static_cast<uint32_t>(copied);
-    }
-
-private:
-    bool EnsureWindowFor(std::size_t pos)
-    {
-        if ((pos >= m_windowOffset) && (pos < (m_windowOffset + m_windowValidBytes))) {
-            return true;
-        }
-
-        const std::size_t mapOffset = (pos / m_sectorSize) * m_sectorSize;
-        const std::size_t mapBytes = std::min(m_windowSize, m_totalSize - mapOffset);
-        const uint32_t needSectors = static_cast<uint32_t>((mapBytes + m_sectorSize - 1) / m_sectorSize);
-        if (needSectors == 0) {
-            return false;
-        }
-
-        m_window.assign(static_cast<std::size_t>(needSectors) * m_sectorSize, 0);
-        const uint64_t absSector = m_startSector + (mapOffset / m_sectorSize);
-        const uint32_t gotSectors = m_source->ReadSectors(absSector, needSectors, m_window.data());
-        if (gotSectors == 0) {
-            m_window.clear();
-            m_windowValidBytes = 0;
-            return false;
-        }
-
-        const std::size_t gotBytes = static_cast<std::size_t>(gotSectors) * m_sectorSize;
-        ConvertCDAudioToLittleEndian(m_window.data(), static_cast<uint32_t>(gotBytes));
-
-        m_windowOffset = mapOffset;
-        m_windowValidBytes = std::min(gotBytes, m_totalSize - m_windowOffset);
-        return pos < (m_windowOffset + m_windowValidBytes);
-    }
-
-private:
-    SectorSource* m_source;
-    uint64_t m_startSector;
-    uint32_t m_sectorSize;
-    std::size_t m_totalSize;
-    std::size_t m_windowSize;
-    std::size_t m_position;
-
-    std::vector<uint8_t> m_window;
-    std::size_t m_windowOffset;
-    std::size_t m_windowValidBytes;
-};
-
-class DecoderControl
-{
-public:
-    DecoderControl()
-        : m_stream(nullptr)
-        , m_metaSource(nullptr)
-        , m_sectorSource(nullptr)
-        , m_currentFrames(0)
-        , m_totalFrames(0)
-        , m_started(false)
-    {
-        InitSourceAudioFormat(m_sourceFmt);
-    }
-
-    bool Init(CDataStream* stream)
-    {
-        m_stream = stream;
-        if (m_stream == nullptr) {
-            return false;
-        }
-
-        m_metaSource = m_stream->QuerySource<MetaSource>();
-        m_sectorSource = m_stream->QuerySource<SectorSource>();
-        if (m_sectorSource == nullptr) {
-            return false;
-        }
-        if (m_sectorSource->Type() != SectorSourceType::AudioCD) {
-            return false;
-        }
-
-        const uint32_t sectorSize = m_sectorSource->SectorSize();
-        if ((sectorSize == 0) || ((sectorSize % m_sourceFmt.blockAlign) != 0)) {
-            return false;
-        }
-
-        const uint64_t startSector = m_sectorSource->GetStartSectors();
-        const uint32_t sectorsCount = m_sectorSource->GetSectorsCount();
-        const std::size_t totalSize = static_cast<std::size_t>(sectorsCount) * sectorSize;
-        m_totalFrames = totalSize / m_sourceFmt.blockAlign;
-
-        m_dataBuffer = std::make_unique<DataBuffer>(m_sectorSource, startSector, sectorSize, totalSize, kDefaultWindowSize);
-        m_currentFrames = 0;
-        m_started = false;
-        return true;
-    }
-
-    bool Start(uint32_t streamIndex)
-    {
-        if ((streamIndex != 0) && (streamIndex != static_cast<uint32_t>(-1))) {
-            return false;
-        }
-        if (!m_dataBuffer) {
-            return false;
-        }
-
-        m_dataBuffer->Reset();
-        m_currentFrames = 0;
-        m_started = true;
-        return true;
-    }
-
-    void Stop()
-    {
-        m_started = false;
-    }
-
-    bool IsStarted() const
-    {
-        return m_started;
-    }
-
-    bool IsCanSeeking() const
-    {
-        return m_dataBuffer != nullptr;
-    }
-
-    uint32_t DecodeFrames(void* pBuf, uint32_t frames, const AudioFormat* audioFmt)
-    {
-        if (!m_started || !m_dataBuffer || (pBuf == nullptr) || !IsSupportS16Stereo(audioFmt) || (frames == 0)) {
-            return 0;
-        }
-
-        const std::size_t targetBytes = static_cast<std::size_t>(frames) * m_sourceFmt.blockAlign;
-        const uint32_t readBytes = m_dataBuffer->Read(pBuf, static_cast<uint32_t>(targetBytes));
-        const uint32_t readFrames = readBytes / m_sourceFmt.blockAlign;
-        m_currentFrames = m_dataBuffer->Tell() / m_sourceFmt.blockAlign;
-        return readFrames;
-    }
-
-    void SeekToFrame(std::size_t frames)
-    {
-        if (!m_dataBuffer) {
-            return;
-        }
-
-        const std::size_t target = std::min(frames, m_totalFrames);
-        const std::size_t targetBytes = target * m_sourceFmt.blockAlign;
-        if (m_dataBuffer->Seek(targetBytes)) {
-            m_currentFrames = target;
-        }
-    }
-
-    const DsMetaInfo* GetMetaInfo() const
-    {
-        return (m_metaSource != nullptr) ? m_metaSource->GetMetaInformation() : nullptr;
-    }
-
-    const AudioFormat& SourceFormat() const
-    {
-        return m_sourceFmt;
-    }
-
-    std::size_t CurrentFrames() const
-    {
-        return m_currentFrames;
-    }
-
-    std::size_t TotalFrames() const
-    {
-        return m_totalFrames;
-    }
-
-private:
-    CDataStream* m_stream;
-    MetaSource* m_metaSource;
-    SectorSource* m_sectorSource;
-    AudioFormat m_sourceFmt;
-    std::size_t m_currentFrames;
-    std::size_t m_totalFrames;
-    bool m_started;
-    std::unique_ptr<DataBuffer> m_dataBuffer;
-};
-
 typedef struct tagDecoderContext
 {
     AudioContextHeader hdr;
     std::wstring mediaName;
-    std::unique_ptr<DecoderControl> control;
+    std::unique_ptr<CDTrackDecoderControl> control;
 } DecoderContext;
 
-static void SyncHeaderByControl(DecoderContext* ctx)
+void SyncHeaderByControl(DecoderContext* ctx)
 {
     if ((ctx == nullptr) || !ctx->control) {
         return;
@@ -427,7 +124,7 @@ void* WINAPI Plug_OnInitialize(const PluginInitialize* init)
     ctx->hdr.streamIndex = static_cast<uint32_t>(-1);
     ctx->mediaName = init->pStream->GetName();
 
-    ctx->control = std::make_unique<DecoderControl>();
+    ctx->control = std::make_unique<CDTrackDecoderControl>();
     if (!ctx->control->Init(init->pStream))
     {
         strcpy_s(errorMsg, "Failed to initialize CD track decoder control.");
@@ -493,7 +190,7 @@ int WINAPI Plug_IsSupportOutput(void* ctxhdr, uint32_t mediaStreamIdx, const Aud
         return 0;
     }
 
-    return IsSupportS16Stereo(audioFmt) ? 1 : 0;
+    return CDTrackDecoderControl::IsSupportOutputFormat(audioFmt) ? 1 : 0;
 }
 
 int WINAPI Plug_IsCanSeeking(void* ctxhdr, uint32_t mediaStreamIdx)
