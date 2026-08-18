@@ -1,0 +1,29 @@
+本次任务是重构 cdtrack_decoder 插件项目。
+
+1、使用sectorSource接口，以CD扇区为读物 CD 数据。
+2、设计一个 DataBuffer 作为解码缓冲区，DataBuffer 内维护一个 PCM 音频数据缓冲区，这个缓冲区的逻辑范围是从 0 到 totalszie。totalszie 是整个音轨解码后的 PCM 音频数据大小，单位是字节。DataBuffer 采用滑动窗口的原理，窗口大小为 4-8M字节（大小可设置）。Plug_DecodeFrames 和 Plug_SeekToFrame 都是基于 DataBuffer 中的 PCM 音频数据操作。当操作的数据超出当前缓冲区滑动窗口的数据范围时，调用 sectorSource 的 ReadSectors 读取 CD 扇区数据，重新映射滑动窗口。
+3、设计一个DecoderControl对象封装解码、seek、startstream 等操作。
+
+
+/***********************************************************/
+
+已重新加载 todo_task.txt，并完成了 cdtrack_decoder 的重构，核心变化都落在 cdtrack_decoder/PlugMain.cpp。
+这次改动是：
+- 改为通过 SectorSource 读取 CD 扇区数据（不再依赖 DataStream::Read）  
+- 扇区读取统一走 SectorSource::ReadSectors：cdtrack_decoder/PlugMain.cpp:165
+- 新增 DataBuffer 解码缓冲区（滑动窗口模型）  
+- 逻辑范围是 0..totalSize 字节：cdtrack_decoder/PlugMain.cpp:112  
+- 窗口大小可配置，并限制在 4MB~8MB：cdtrack_decoder/PlugMain.cpp:18  
+- 默认窗口大小 4MB：cdtrack_decoder/PlugMain.cpp:20  
+- 当读/seek超出当前窗口时自动重映射窗口并重新读扇区：cdtrack_decoder/PlugMain.cpp:150
+- 新增 DecoderControl 对象封装解码控制流程  
+- 封装 Init / Start / Stop / DecodeFrames / SeekToFrame / Meta / Status：cdtrack_decoder/PlugMain.cpp:193  
+- Plug_* 导出函数改为调用 DecoderControl，PlugMain 只做参数校验和桥接：例如  
+- 初始化：cdtrack_decoder/PlugMain.cpp:411  
+- 开始流：cdtrack_decoder/PlugMain.cpp:442  
+- 解码：cdtrack_decoder/PlugMain.cpp:527  
+- seek：cdtrack_decoder/PlugMain.cpp:541
+- 保留你之前约束不变  
+- Plug_ParseFileTypeID 始终返回 StreamFormatUnknown：cdtrack_decoder/PlugMain.cpp:388  
+- Plug_IsSupportOutput 仍只支持 16-bit / 2ch PCM：cdtrack_decoder/PlugMain.cpp:36, cdtrack_decoder/PlugMain.cpp:482
+说明：这次是结构重构，未改导出符号/工程入口文件，cdtrack_decoder/PlugMain.h、cdtrack_decoder/cdtrack_decoder.def、cdtrack_decoder/CMakeLists.txt 无需额外调整。

@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <vector>
@@ -12,30 +13,20 @@
 const char8_t* plugname = u8"CD Track decoder";
 const char8_t* plugpublisher = u8"imPlayer Group";
 
+namespace {
+
+constexpr std::size_t kWindowSizeMin = 4 * 1024 * 1024;
+constexpr std::size_t kWindowSizeMax = 8 * 1024 * 1024;
+constexpr std::size_t kDefaultWindowSize = kWindowSizeMin;
+
+char errorMsg[256] = {};
+
 typedef struct tagFileExtRegItem
 {
     uint32_t st;
     const char* desc;
     const char* extList;
 } FileExtRegItem;
-
-typedef struct tagDecoderContext
-{
-    AudioContextHeader hdr;
-    std::wstring mediaName;
-    CDataStream* stream;
-    MetaSource* metaSource;
-    SectorSource* sectorSource;
-    AudioFormat sourceFmt;
-    std::size_t currentFrames;
-    std::size_t totalFrames;
-    uint32_t framesPerSector;
-    bool started;
-    std::vector<uint8_t> cache;
-    std::size_t cacheOffset;
-} DecoderContext;
-
-char errorMsg[256] = {};
 
 static void InitSourceAudioFormat(AudioFormat& fmt)
 {
@@ -75,6 +66,282 @@ static void ConvertCDAudioToLittleEndian(uint8_t* data, uint32_t bytes)
         data[i + 1] = high;
     }
 }
+
+class DataBuffer
+{
+public:
+    DataBuffer(SectorSource* source,
+               uint64_t startSector,
+               uint32_t sectorSize,
+               std::size_t totalSize,
+               std::size_t windowSize)
+        : m_source(source)
+        , m_startSector(startSector)
+        , m_sectorSize(sectorSize)
+        , m_totalSize(totalSize)
+        , m_windowSize(std::clamp(windowSize, kWindowSizeMin, kWindowSizeMax))
+        , m_position(0)
+        , m_windowOffset(0)
+        , m_windowValidBytes(0)
+    {
+    }
+
+    bool Reset()
+    {
+        m_position = 0;
+        m_window.clear();
+        m_windowOffset = 0;
+        m_windowValidBytes = 0;
+        return true;
+    }
+
+    bool Seek(std::size_t pos)
+    {
+        if (pos > m_totalSize) {
+            return false;
+        }
+        m_position = pos;
+        return true;
+    }
+
+    std::size_t Tell() const
+    {
+        return m_position;
+    }
+
+    std::size_t TotalSize() const
+    {
+        return m_totalSize;
+    }
+
+    uint32_t Read(void* dst, uint32_t bytes)
+    {
+        if ((dst == nullptr) || (bytes == 0) || (m_position >= m_totalSize)) {
+            return 0;
+        }
+
+        uint8_t* out = static_cast<uint8_t*>(dst);
+        std::size_t copied = 0;
+        std::size_t remain = std::min<std::size_t>(bytes, m_totalSize - m_position);
+        while (remain > 0)
+        {
+            if (!EnsureWindowFor(m_position)) {
+                break;
+            }
+
+            const std::size_t inWindow = m_position - m_windowOffset;
+            if (inWindow >= m_windowValidBytes) {
+                break;
+            }
+
+            const std::size_t available = m_windowValidBytes - inWindow;
+            const std::size_t chunk = std::min(available, remain);
+            std::memcpy(out + copied, m_window.data() + inWindow, chunk);
+
+            copied += chunk;
+            remain -= chunk;
+            m_position += chunk;
+        }
+
+        return static_cast<uint32_t>(copied);
+    }
+
+private:
+    bool EnsureWindowFor(std::size_t pos)
+    {
+        if ((pos >= m_windowOffset) && (pos < (m_windowOffset + m_windowValidBytes))) {
+            return true;
+        }
+
+        const std::size_t mapOffset = (pos / m_sectorSize) * m_sectorSize;
+        const std::size_t mapBytes = std::min(m_windowSize, m_totalSize - mapOffset);
+        const uint32_t needSectors = static_cast<uint32_t>((mapBytes + m_sectorSize - 1) / m_sectorSize);
+        if (needSectors == 0) {
+            return false;
+        }
+
+        m_window.assign(static_cast<std::size_t>(needSectors) * m_sectorSize, 0);
+        const uint64_t absSector = m_startSector + (mapOffset / m_sectorSize);
+        const uint32_t gotSectors = m_source->ReadSectors(absSector, needSectors, m_window.data());
+        if (gotSectors == 0) {
+            m_window.clear();
+            m_windowValidBytes = 0;
+            return false;
+        }
+
+        const std::size_t gotBytes = static_cast<std::size_t>(gotSectors) * m_sectorSize;
+        ConvertCDAudioToLittleEndian(m_window.data(), static_cast<uint32_t>(gotBytes));
+
+        m_windowOffset = mapOffset;
+        m_windowValidBytes = std::min(gotBytes, m_totalSize - m_windowOffset);
+        return pos < (m_windowOffset + m_windowValidBytes);
+    }
+
+private:
+    SectorSource* m_source;
+    uint64_t m_startSector;
+    uint32_t m_sectorSize;
+    std::size_t m_totalSize;
+    std::size_t m_windowSize;
+    std::size_t m_position;
+
+    std::vector<uint8_t> m_window;
+    std::size_t m_windowOffset;
+    std::size_t m_windowValidBytes;
+};
+
+class DecoderControl
+{
+public:
+    DecoderControl()
+        : m_stream(nullptr)
+        , m_metaSource(nullptr)
+        , m_sectorSource(nullptr)
+        , m_currentFrames(0)
+        , m_totalFrames(0)
+        , m_started(false)
+    {
+        InitSourceAudioFormat(m_sourceFmt);
+    }
+
+    bool Init(CDataStream* stream)
+    {
+        m_stream = stream;
+        if (m_stream == nullptr) {
+            return false;
+        }
+
+        m_metaSource = m_stream->QuerySource<MetaSource>();
+        m_sectorSource = m_stream->QuerySource<SectorSource>();
+        if (m_sectorSource == nullptr) {
+            return false;
+        }
+        if (m_sectorSource->Type() != SectorSourceType::AudioCD) {
+            return false;
+        }
+
+        const uint32_t sectorSize = m_sectorSource->SectorSize();
+        if ((sectorSize == 0) || ((sectorSize % m_sourceFmt.blockAlign) != 0)) {
+            return false;
+        }
+
+        const uint64_t startSector = m_sectorSource->GetStartSectors();
+        const uint32_t sectorsCount = m_sectorSource->GetSectorsCount();
+        const std::size_t totalSize = static_cast<std::size_t>(sectorsCount) * sectorSize;
+        m_totalFrames = totalSize / m_sourceFmt.blockAlign;
+
+        m_dataBuffer = std::make_unique<DataBuffer>(m_sectorSource, startSector, sectorSize, totalSize, kDefaultWindowSize);
+        m_currentFrames = 0;
+        m_started = false;
+        return true;
+    }
+
+    bool Start(uint32_t streamIndex)
+    {
+        if ((streamIndex != 0) && (streamIndex != static_cast<uint32_t>(-1))) {
+            return false;
+        }
+        if (!m_dataBuffer) {
+            return false;
+        }
+
+        m_dataBuffer->Reset();
+        m_currentFrames = 0;
+        m_started = true;
+        return true;
+    }
+
+    void Stop()
+    {
+        m_started = false;
+    }
+
+    bool IsStarted() const
+    {
+        return m_started;
+    }
+
+    bool IsCanSeeking() const
+    {
+        return m_dataBuffer != nullptr;
+    }
+
+    uint32_t DecodeFrames(void* pBuf, uint32_t frames, const AudioFormat* audioFmt)
+    {
+        if (!m_started || !m_dataBuffer || (pBuf == nullptr) || !IsSupportS16Stereo(audioFmt) || (frames == 0)) {
+            return 0;
+        }
+
+        const std::size_t targetBytes = static_cast<std::size_t>(frames) * m_sourceFmt.blockAlign;
+        const uint32_t readBytes = m_dataBuffer->Read(pBuf, static_cast<uint32_t>(targetBytes));
+        const uint32_t readFrames = readBytes / m_sourceFmt.blockAlign;
+        m_currentFrames = m_dataBuffer->Tell() / m_sourceFmt.blockAlign;
+        return readFrames;
+    }
+
+    void SeekToFrame(std::size_t frames)
+    {
+        if (!m_dataBuffer) {
+            return;
+        }
+
+        const std::size_t target = std::min(frames, m_totalFrames);
+        const std::size_t targetBytes = target * m_sourceFmt.blockAlign;
+        if (m_dataBuffer->Seek(targetBytes)) {
+            m_currentFrames = target;
+        }
+    }
+
+    const DsMetaInfo* GetMetaInfo() const
+    {
+        return (m_metaSource != nullptr) ? m_metaSource->GetMetaInformation() : nullptr;
+    }
+
+    const AudioFormat& SourceFormat() const
+    {
+        return m_sourceFmt;
+    }
+
+    std::size_t CurrentFrames() const
+    {
+        return m_currentFrames;
+    }
+
+    std::size_t TotalFrames() const
+    {
+        return m_totalFrames;
+    }
+
+private:
+    CDataStream* m_stream;
+    MetaSource* m_metaSource;
+    SectorSource* m_sectorSource;
+    AudioFormat m_sourceFmt;
+    std::size_t m_currentFrames;
+    std::size_t m_totalFrames;
+    bool m_started;
+    std::unique_ptr<DataBuffer> m_dataBuffer;
+};
+
+typedef struct tagDecoderContext
+{
+    AudioContextHeader hdr;
+    std::wstring mediaName;
+    std::unique_ptr<DecoderControl> control;
+} DecoderContext;
+
+static void SyncHeaderByControl(DecoderContext* ctx)
+{
+    if ((ctx == nullptr) || !ctx->control) {
+        return;
+    }
+
+    ctx->hdr.streamCount = 1;
+    ctx->hdr.m_totalFrames = static_cast<long long>(ctx->control->TotalFrames());
+    ctx->hdr.durations = static_cast<float>(static_cast<double>(ctx->control->TotalFrames()) / ctx->control->SourceFormat().sampleRate);
+}
+
+} // namespace
 
 int WINAPI Plug_OnRegister(const ApplicationConfig* app, PluginRegister* regInfo)
 {
@@ -134,7 +401,7 @@ int WINAPI Plug_GetPluginInformation(PluginInfo* info)
 
     info->plug_type = PluginType::Decoder;
     info->ver_major = 1;
-    info->ver_minor = 0;
+    info->ver_minor = 1;
     strcpy_s(info->name, 64, reinterpret_cast<const char*>(plugname));
     strcpy_s(info->publisher, 128, reinterpret_cast<const char*>(plugpublisher));
 
@@ -149,103 +416,72 @@ void* WINAPI Plug_OnInitialize(const PluginInitialize* init)
         return nullptr;
     }
 
-    DecoderContext* pCtx = new DecoderContext{};
-    if (pCtx == nullptr) {
+    auto* ctx = new DecoderContext{};
+    if (ctx == nullptr) {
         return nullptr;
     }
 
-    pCtx->hdr.size = sizeof(AudioContextHeader);
-    pCtx->hdr.filesize = init->pStream->GetLength();
-    pCtx->hdr.streamCount = 1;
-    pCtx->hdr.streamIndex = static_cast<uint32_t>(-1);
-    pCtx->mediaName = init->pStream->GetName();
-    pCtx->stream = init->pStream;
-    pCtx->metaSource = init->pStream->QuerySource<MetaSource>();
-    pCtx->sectorSource = init->pStream->QuerySource<SectorSource>();
-    pCtx->currentFrames = 0;
-    pCtx->started = false;
-    pCtx->cacheOffset = 0;
-    InitSourceAudioFormat(pCtx->sourceFmt);
+    ctx->hdr.size = sizeof(AudioContextHeader);
+    ctx->hdr.filesize = init->pStream->GetLength();
+    ctx->hdr.streamCount = 1;
+    ctx->hdr.streamIndex = static_cast<uint32_t>(-1);
+    ctx->mediaName = init->pStream->GetName();
 
-    if (pCtx->sectorSource == nullptr)
+    ctx->control = std::make_unique<DecoderControl>();
+    if (!ctx->control->Init(init->pStream))
     {
-        strcpy_s(errorMsg, "CD track stream missing SectorSource interface.");
-        delete pCtx;
-        return nullptr;
-    }
-    if (pCtx->sectorSource->Type() != SectorSourceType::AudioCD)
-    {
-        strcpy_s(errorMsg, "Current SectorSource type is unsupported.");
-        delete pCtx;
+        strcpy_s(errorMsg, "Failed to initialize CD track decoder control.");
+        delete ctx;
         return nullptr;
     }
 
-    const uint32_t sectorSize = pCtx->sectorSource->SectorSize();
-    if ((sectorSize == 0) || ((sectorSize % pCtx->sourceFmt.blockAlign) != 0))
-    {
-        strcpy_s(errorMsg, "Invalid AudioCD sector size.");
-        delete pCtx;
-        return nullptr;
-    }
-
-    pCtx->framesPerSector = sectorSize / pCtx->sourceFmt.blockAlign;
-    pCtx->totalFrames = static_cast<std::size_t>(pCtx->sectorSource->GetSectorsCount()) * pCtx->framesPerSector;
-    pCtx->hdr.m_totalFrames = static_cast<long long>(pCtx->totalFrames);
-    pCtx->hdr.durations = static_cast<float>(static_cast<double>(pCtx->totalFrames) / pCtx->sourceFmt.sampleRate);
-
-    return pCtx;
+    SyncHeaderByControl(ctx);
+    return ctx;
 }
 
 int WINAPI Plug_StartStream(void* ctxhdr, const PluginStart* param)
 {
-    DecoderContext* pCtx = static_cast<DecoderContext*>(ctxhdr);
+    DecoderContext* ctx = static_cast<DecoderContext*>(ctxhdr);
     const uint32_t reqStreamIdx = (param == nullptr) ? static_cast<uint32_t>(-1) : param->mediaStreamIdx;
-    if (!pCtx)
+    if (!ctx)
     {
         sprintf_s(errorMsg, "Failed to start media stream [%u]: plus not initialized!", reqStreamIdx);
         return -1;
     }
-    if ((param == nullptr) || (pCtx->stream == nullptr) || (pCtx->sectorSource == nullptr))
+    if ((param == nullptr) || !ctx->control)
     {
         strcpy_s(errorMsg, "Failed to start media stream: invalid start parameter.");
         return -1;
     }
-    if ((param->mediaStreamIdx != 0) && (param->mediaStreamIdx != static_cast<uint32_t>(-1)))
+    if (!ctx->control->Start(param->mediaStreamIdx))
     {
-        sprintf_s(errorMsg, "Unsupported media stream index: %u", param->mediaStreamIdx);
+        sprintf_s(errorMsg, "Failed to start media stream [%u]: unsupported stream index.", param->mediaStreamIdx);
         return -1;
     }
 
-    pCtx->sectorSource->SeekToSector(pCtx->sectorSource->GetStartSectors());
-    pCtx->stream->Seek(SeekBase::Begin, 0);
-    pCtx->currentFrames = 0;
-    pCtx->cache.clear();
-    pCtx->cacheOffset = 0;
-    pCtx->started = true;
-
-    pCtx->hdr.streamIndex = 0;
-    pCtx->hdr.streamCount = 1;
+    ctx->hdr.streamIndex = 0;
+    SyncHeaderByControl(ctx);
     return 0;
 }
 
 int WINAPI Plug_StopStream(void* ctxhdr, uint32_t mediaStreamIdx)
 {
-    DecoderContext* pCtx = static_cast<DecoderContext*>(ctxhdr);
-    if (!pCtx)
+    DecoderContext* ctx = static_cast<DecoderContext*>(ctxhdr);
+    if (!ctx || !ctx->control)
     {
         sprintf_s(errorMsg, "Failed to stop media stream [%u]: plus not initialized!", mediaStreamIdx);
         return -1;
     }
 
-    pCtx->started = false;
-    pCtx->hdr.streamIndex = static_cast<uint32_t>(-1);
+    ctx->control->Stop();
+    ctx->hdr.streamIndex = static_cast<uint32_t>(-1);
     return 0;
 }
 
 int WINAPI Plug_IsSupportOutput(void* ctxhdr, uint32_t mediaStreamIdx, const AudioFormat* audioFmt)
 {
-    DecoderContext* pCtx = static_cast<DecoderContext*>(ctxhdr);
-    if (!pCtx)
+    DecoderContext* ctx = static_cast<DecoderContext*>(ctxhdr);
+    if (!ctx || !ctx->control)
     {
         strcpy_s(errorMsg, "Current audio stream is closed!!");
         return -1;
@@ -262,8 +498,8 @@ int WINAPI Plug_IsSupportOutput(void* ctxhdr, uint32_t mediaStreamIdx, const Aud
 
 int WINAPI Plug_IsCanSeeking(void* ctxhdr, uint32_t mediaStreamIdx)
 {
-    DecoderContext* pCtx = static_cast<DecoderContext*>(ctxhdr);
-    if (!pCtx)
+    DecoderContext* ctx = static_cast<DecoderContext*>(ctxhdr);
+    if (!ctx || !ctx->control)
     {
         strcpy_s(errorMsg, "Current audio stream is closed!!");
         return 0;
@@ -275,116 +511,48 @@ int WINAPI Plug_IsCanSeeking(void* ctxhdr, uint32_t mediaStreamIdx)
         return 0;
     }
 
-    return (pCtx->sectorSource != nullptr) ? 1 : 0;
+    return ctx->control->IsCanSeeking() ? 1 : 0;
 }
 
 void WINAPI Plug_OnUninitialize(void* ctxhdr)
 {
-    DecoderContext* pCtx = static_cast<DecoderContext*>(ctxhdr);
-    if (!pCtx) {
+    DecoderContext* ctx = static_cast<DecoderContext*>(ctxhdr);
+    if (!ctx) {
         return;
     }
 
-    delete pCtx;
+    delete ctx;
 }
 
 uint32_t WINAPI Plug_DecodeFrames(void* ctx, void* pBuf, uint32_t frames, const AudioFormat* audioFmt)
 {
-    DecoderContext* pCtx = static_cast<DecoderContext*>(ctx);
-    if (!pCtx || !pCtx->started || (pCtx->stream == nullptr) || (pBuf == nullptr))
+    DecoderContext* decCtx = static_cast<DecoderContext*>(ctx);
+    if (!decCtx || !decCtx->control || !decCtx->control->IsStarted())
     {
         strcpy_s(errorMsg, "Current audio stream is closed!!");
         return 0;
     }
-    if (!IsSupportS16Stereo(audioFmt)) {
-        return 0;
-    }
-    if (frames == 0) {
-        return 0;
-    }
 
-    const uint32_t blockAlign = pCtx->sourceFmt.blockAlign;
-    const std::size_t targetBytes = static_cast<std::size_t>(frames) * blockAlign;
-    uint8_t* outBuf = static_cast<uint8_t*>(pBuf);
-    std::size_t copied = 0;
-    const uint32_t sectorSize = pCtx->sectorSource->SectorSize();
-
-    while (copied < targetBytes)
-    {
-        if (pCtx->cacheOffset < pCtx->cache.size())
-        {
-            const std::size_t cacheLeft = pCtx->cache.size() - pCtx->cacheOffset;
-            const std::size_t needBytes = targetBytes - copied;
-            const std::size_t copyBytes = std::min(cacheLeft, needBytes);
-            std::memcpy(outBuf + copied, pCtx->cache.data() + pCtx->cacheOffset, copyBytes);
-            copied += copyBytes;
-            pCtx->cacheOffset += copyBytes;
-            continue;
-        }
-
-        std::vector<uint8_t> readBuf(sectorSize + targetBytes - copied);
-        const uint32_t readBytes = pCtx->stream->Read(readBuf.data(), static_cast<uint32_t>(targetBytes - copied));
-        if (readBytes == 0) {
-            break;
-        }
-
-        readBuf.resize(readBytes);
-        ConvertCDAudioToLittleEndian(readBuf.data(), readBytes);
-        pCtx->cache.swap(readBuf);
-        pCtx->cacheOffset = 0;
-    }
-
-    const uint32_t readFrames = static_cast<uint32_t>(copied / blockAlign);
-    pCtx->currentFrames += readFrames;
-    pCtx->hdr.streamIndex = 0;
-
+    const uint32_t readFrames = decCtx->control->DecodeFrames(pBuf, frames, audioFmt);
+    decCtx->hdr.streamIndex = 0;
     return readFrames;
 }
 
 void WINAPI Plug_SeekToFrame(void* ctx, std::size_t frames)
 {
-    DecoderContext* pCtx = static_cast<DecoderContext*>(ctx);
-    if (!pCtx || (pCtx->sectorSource == nullptr) || (pCtx->stream == nullptr)) {
+    DecoderContext* decCtx = static_cast<DecoderContext*>(ctx);
+    if (!decCtx || !decCtx->control) {
         return;
     }
 
-    const std::size_t totalFrames = pCtx->totalFrames;
-    if (frames > totalFrames) {
-        frames = totalFrames;
-    }
-
-    const uint64_t startSector = pCtx->sectorSource->GetStartSectors();
-    const uint32_t sectorSize = pCtx->sectorSource->SectorSize();
-    const std::size_t sectorIndex = frames / pCtx->framesPerSector;
-    const std::size_t frameInsideSector = frames % pCtx->framesPerSector;
-    const uint64_t targetSector = startSector + static_cast<uint64_t>(sectorIndex);
-
-    pCtx->sectorSource->SeekToSector(targetSector);
-    pCtx->stream->Seek(SeekBase::Begin, static_cast<long long>(sectorIndex * sectorSize));
-    pCtx->cache.clear();
-    pCtx->cacheOffset = 0;
-
-    if (frameInsideSector > 0)
-    {
-        std::vector<uint8_t> secBuf(sectorSize);
-        const uint32_t got = pCtx->stream->Read(secBuf.data(), sectorSize);
-        if (got > 0)
-        {
-            secBuf.resize(got);
-            ConvertCDAudioToLittleEndian(secBuf.data(), got);
-            pCtx->cache.swap(secBuf);
-            pCtx->cacheOffset = std::min(pCtx->cache.size(), frameInsideSector * pCtx->sourceFmt.blockAlign);
-        }
-    }
-
-    pCtx->currentFrames = frames;
-    pCtx->hdr.streamIndex = 0;
+    decCtx->control->SeekToFrame(frames);
+    decCtx->hdr.streamIndex = 0;
 }
 
 int WINAPI Plug_QueryMetaInfo(void* ctxhdr, uint32_t streamIdx, AudioMetaTags* metaTags)
 {
-    DecoderContext* pCtx = static_cast<DecoderContext*>(ctxhdr);
-    if (!pCtx)
+    DecoderContext* ctx = static_cast<DecoderContext*>(ctxhdr);
+    if (!ctx || !ctx->control)
     {
         strcpy_s(errorMsg, "Current audio stream is closed!!");
         return -1;
@@ -408,12 +576,9 @@ int WINAPI Plug_QueryMetaInfo(void* ctxhdr, uint32_t streamIdx, AudioMetaTags* m
     metaTags->streamIdx = streamIdx;
     metaTags->tags.Clear();
 
-    if (pCtx->metaSource != nullptr)
-    {
-        const DsMetaInfo* info = pCtx->metaSource->GetMetaInformation();
-        if (info != nullptr) {
-            metaTags->tags = info->itemTag;
-        }
+    const DsMetaInfo* info = ctx->control->GetMetaInfo();
+    if (info != nullptr) {
+        metaTags->tags = info->itemTag;
     }
 
     return 0;
@@ -421,8 +586,8 @@ int WINAPI Plug_QueryMetaInfo(void* ctxhdr, uint32_t streamIdx, AudioMetaTags* m
 
 int WINAPI Plug_GetAudioStatusInfo(void* ctxhdr, PluginAudioInfo* info)
 {
-    DecoderContext* pCtx = static_cast<DecoderContext*>(ctxhdr);
-    if (!pCtx)
+    DecoderContext* ctx = static_cast<DecoderContext*>(ctxhdr);
+    if (!ctx || !ctx->control)
     {
         strcpy_s(errorMsg, "Current audio stream is closed!!");
         return -1;
@@ -435,19 +600,19 @@ int WINAPI Plug_GetAudioStatusInfo(void* ctxhdr, PluginAudioInfo* info)
 
     info->size = sizeof(PluginAudioInfo);
     if ((info->flags & AudioInfoFlagFormat) != 0) {
-        info->audioFmt = pCtx->sourceFmt;
+        info->audioFmt = ctx->control->SourceFormat();
     }
     if ((info->flags & AudioInfoFlagActiveStream) != 0) {
-        info->mediaStreamIdx = pCtx->started ? 0 : static_cast<uint32_t>(-1);
+        info->mediaStreamIdx = ctx->control->IsStarted() ? 0 : static_cast<uint32_t>(-1);
     }
     if ((info->flags & AudioInfoFlagStreamCount) != 0) {
         info->mediaStreamCount = 1;
     }
     if ((info->flags & AudioInfoFlagCurrentFrames) != 0) {
-        info->currentFrames = pCtx->currentFrames;
+        info->currentFrames = ctx->control->CurrentFrames();
     }
     if ((info->flags & AudioInfoFlagTotalFrames) != 0) {
-        info->totalFrames = pCtx->totalFrames;
+        info->totalFrames = ctx->control->TotalFrames();
     }
 
     return 0;
@@ -455,14 +620,14 @@ int WINAPI Plug_GetAudioStatusInfo(void* ctxhdr, PluginAudioInfo* info)
 
 void WINAPI Plug_ResetDecoder(void* ctxhdr)
 {
-    DecoderContext* pCtx = static_cast<DecoderContext*>(ctxhdr);
-    if (!pCtx)
+    DecoderContext* ctx = static_cast<DecoderContext*>(ctxhdr);
+    if (!ctx || !ctx->control)
     {
         strcpy_s(errorMsg, "Current audio stream is closed!!");
         return;
     }
 
-    Plug_SeekToFrame(pCtx, 0);
+    ctx->control->SeekToFrame(0);
 }
 
 void WINAPI Plug_ConfigPlugin(HWND hWnd)
