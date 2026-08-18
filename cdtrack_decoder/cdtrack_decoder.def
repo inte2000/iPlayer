@@ -1,0 +1,17 @@
+EXPORTS
+    Plug_OnRegister
+    Plug_GetErrMessage
+    Plug_ParseFileTypeID
+    Plug_GetPluginInformation
+    Plug_OnInitialize
+    Plug_StartStream
+    Plug_StopStream
+    Plug_IsSupportOutput
+    Plug_IsCanSeeking
+    Plug_OnUninitialize
+    Plug_DecodeFrames
+    Plug_SeekToFrame
+    Plug_QueryMetaInfo
+    Plug_GetAudioStatusInfo
+    Plug_ResetDecoder
+    Plug_ConfigPlugin

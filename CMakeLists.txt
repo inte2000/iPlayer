@@ -50,6 +50,7 @@ add_subdirectory(libflac_decoder)
 add_subdirectory(libogg_decoder)
 add_subdirectory(wavpack_decoder)
 add_subdirectory(ffmpeg_decoder)
+add_subdirectory(cdtrack_decoder)
 
 if(BUILD_TESTING)
     add_subdirectory(test)
@@ -73,6 +74,7 @@ add_dependencies(${PROJECT_NAME} libflac_decoder)
 add_dependencies(${PROJECT_NAME} libogg_decoder)
 add_dependencies(${PROJECT_NAME} wavpack_decoder)
 add_dependencies(${PROJECT_NAME} ffmpeg_decoder)
+add_dependencies(${PROJECT_NAME} cdtrack_decoder)
 target_link_libraries(${PROJECT_NAME} PRIVATE
         ole32
         uuid

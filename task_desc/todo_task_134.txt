@@ -1,0 +1,34 @@
+本次任务是给 implayer 增加一个 cdtrack_decoder 插件项目，仿照其他插件创建插件项目。
+
+1、Plug_ParseFileTypeID 不负责鉴别文件类型，所以总是返回 StreamFormatUnknown。
+2、cdtrack_decoder 插件对 DataStream 代表的 CD Sectors 进行解码，也就是对一条音轨进行解码，所以 pCtx->hdr.streamCount = 1;
+3、通过 DataStream 的 QuerySource 获取相关的接口。
+4、Plug_IsSupportOutput 只支持 16位，双声道 PCM 音频格式
+
+/***********************************************************/
+
+已重新加载 todo_task.txt，并完成 cdtrack_decoder 插件项目的新增与接入。
+这次我做了这些改动：
+- 新建插件项目目录与入口文件：
+- cdtrack_decoder/CMakeLists.txt
+- cdtrack_decoder/PlugMain.h
+- cdtrack_decoder/PlugMain.cpp
+- cdtrack_decoder/cdtrack_decoder.def
+- 将新插件接入主工程：
+- CMakeLists.txt:53 增加 add_subdirectory(cdtrack_decoder)
+- CMakeLists.txt:77 增加 add_dependencies(${PROJECT_NAME} cdtrack_decoder)
+并按你给的 4 条行为要求实现：
+- Plug_ParseFileTypeID 始终返回 StreamFormatUnknown  
+- cdtrack_decoder/PlugMain.cpp:121
+- pCtx->hdr.streamCount = 1（CD 扇区流按单音轨解码）  
+- 初始化与启动后都保持单流：cdtrack_decoder/PlugMain.cpp:159、cdtrack_decoder/PlugMain.cpp:227
+- 通过 DataStream::QuerySource 获取相关接口  
+- MetaSource / SectorSource 通过 QuerySource 取得：cdtrack_decoder/PlugMain.cpp:163、cdtrack_decoder/PlugMain.cpp:164
+- Plug_IsSupportOutput 仅支持 16-bit 双声道 PCM  
+- 限制 PCM_S16 + 2 channels (+16bit)：cdtrack_decoder/PlugMain.cpp:40、cdtrack_decoder/PlugMain.cpp:245
+另外，插件解码逻辑也补齐了最小可用实现：
+- 按 SectorSource 的起始扇区/扇区数计算总帧数（每扇区 2352 字节 -> 588 帧@S16x2）
+- 解码时处理 CD-DA 大端 16-bit 到小端转换
+- 支持按帧 seek（结合扇区 seek 与缓存偏移）
+- Plug_QueryMetaInfo 通过 MetaSource 返回元信息
+如果你愿意，我下一步可以继续做一轮最小运行验证（仅验证插件能被扫描加载、Plug_ParseFileTypeID 行为、Plug_IsSupportOutput约束和单流解码路径）。
