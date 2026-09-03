@@ -1,0 +1,27 @@
+本次任务有两个，分别是：
+
+1、给 play 子命令增加两个播放参数，一个是 cdimage，用于指定光盘镜像文件，另一个是 cdrom，用于指定光驱盘符，它们的格式例子如下：
+implayer.exe --play  --tui --cdimage=path_to_iso_file/image.bin
+implayer.exe --play  --tui --cdrom=F
+其中 tui 是可选参数，目前 play 子命令 支持 filename、playlist、cdimage 和 cdrom 四种播放方式；
+
+2、给 implayer.exe 增加一个 --help  参数，当启动 implayer.exe 没有指定参数，或指定  --help 参数时，打印出 从 cmdline::parser 得到的命令行格式说明。
+
+/***********************************************************/
+
+已按 todo_task.txt 完成实现并验证通过，改动在 src/main.cpp。  
+主要结果：play 子命令新增了 --cdimage、--cdrom 两个参数；同时在“无参数启动”或显式 --help 时都会打印 cmdline::parser 的 usage 说明。
+- 已实现
+- 在 MakeParser() 中新增：
+- --cdimage（CD 镜像路径）
+- --cdrom（光驱盘符，支持 F / F:）
+- 显式 --help
+- 在 play 分支中，播放源优先级改为：playlist → cdimage → cdrom → filename，并补充缺失参数与非法盘符校验。
+- 新增 BuildCdromDevicePath()：把 F/F: 规范化为 \device\F: 供后续播放流程使用。
+- main() 中新增无参数处理：直接输出 parser.usage()（并设置程序名，usage 首行正确显示 exe 路径）。
+- 验证
+- 构建命令：cmake --build build/debug --target imPlayer，成功。
+- 运行验证：
+- imPlayer.exe（无参数）→ 正常输出 usage；
+- imPlayer.exe --help → 正常输出 usage；
+- imPlayer.exe --play --cdrom=12 → 正常报参数格式错误。

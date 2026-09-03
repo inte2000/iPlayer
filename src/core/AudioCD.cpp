@@ -249,19 +249,19 @@ BOOL CAudioCD::QueryCDTextInfo(CdIo_t* cdio, std::vector<CD_TRACK_INFO>& aTracks
 		// 光盘级信息
 		const char* title = cdtext_get_const(cdtext, CDTEXT_FIELD_TITLE, 0);
 		if(title)
-		    m_title = AdaptiveToUtf16LE(title);
+		    m_title = LocalMBCSToUtf16Le(title);
 		const char* artist = cdtext_get_const(cdtext, CDTEXT_FIELD_PERFORMER, 0);
 		if(artist)
-		    m_artist = AdaptiveToUtf16LE(artist);
+		    m_artist = LocalMBCSToUtf16Le(artist);
 		for (std::size_t i = 0; i < aTracks.size(); i++)
 		{
 			const char* track_title = cdtext_get_const(cdtext, CDTEXT_FIELD_TITLE, track_t(i + 1));
 			if (track_title)
-				aTracks[i].title = AdaptiveToUtf16LE(track_title);
+				aTracks[i].title = LocalMBCSToUtf16Le(track_title);
 
 			const char* track_artist = cdtext_get_const(cdtext, CDTEXT_FIELD_PERFORMER, track_t(i + 1));
 			if(track_artist)
-				aTracks[i].artist = AdaptiveToUtf16LE(track_artist);
+				aTracks[i].artist = LocalMBCSToUtf16Le(track_artist);
 		}
 
 		return TRUE;

@@ -213,8 +213,36 @@ static std::vector<std::string> NormalizeCommandArgs(int argc, char* argv[])
     return args;
 }
 
+static bool BuildCdromDevicePath(const std::string& value, std::string& devicePath)
+{
+    if (value.empty()) {
+        return false;
+    }
+
+    char driveLetter = '\0';
+    if ((value.size() == 1) && std::isalpha(static_cast<unsigned char>(value[0])))
+    {
+        driveLetter = value[0];
+    }
+    else if ((value.size() == 2) && std::isalpha(static_cast<unsigned char>(value[0])) && (value[1] == ':'))
+    {
+        driveLetter = value[0];
+    }
+    else
+    {
+        return false;
+    }
+
+    driveLetter = static_cast<char>(std::toupper(static_cast<unsigned char>(driveLetter)));
+    devicePath = "\\device\\";
+    devicePath.push_back(driveLetter);
+    devicePath.push_back(':');
+    return true;
+}
+
 bool MakeParser(cmdline::parser& a)
 {
+    a.add("help", '?', "print this message");
     a.add("play", 'p', "play media file or playlist");
     a.add("ml", '\0', "scan folder and generate playlist file");
     a.add("convert", 'c', "convert media file format");
@@ -227,6 +255,8 @@ bool MakeParser(cmdline::parser& a)
     a.add<std::string>("deviceid", 'i', "device id", false, "");
     a.add<std::string>("speakerlayout", 'o', "speaker layout config file", false, "");
     a.add<std::string>("filename", 'f', "media file name", false, "");
+    a.add<std::string>("cdimage", '\0', "audio cd image file name", false, "");
+    a.add<std::string>("cdrom", '\0', "audio cd-rom drive letter, e.g. F or F:", false, "");
     a.add<std::string>("folder", '\0', "folder path for playlist generation", false, "");
     a.add("recursion", '\0', "scan sub folders recursively");
     a.add<std::string>("playlist", 'l', "playlist file name", false, "");
@@ -247,6 +277,15 @@ int main(int argc, char *argv[])
     {
         std::cout << "Fail to create command line parser!" << std::endl;
         return -1;
+    }
+
+    if (argc <= 1)
+    {
+        if ((argv != nullptr) && (argv[0] != nullptr)) {
+            parser.set_program_name(argv[0]);
+        }
+        std::cout << parser.usage();
+        return 0;
     }
     
     std::string deviceType, devideName, deviceId;
@@ -320,15 +359,40 @@ int main(int argc, char *argv[])
 
             bool bPlaylist = false;
             std::string filename;
-            if(parser.exist("playlist"))
+            if (parser.exist("playlist"))
             {
                 filename = parser.get<std::string>("playlist");
                 bPlaylist = true;
+            }
+            else if (parser.exist("cdimage"))
+            {
+                filename = parser.get<std::string>("cdimage");
+                bPlaylist = false;
+                if (filename.empty())
+                {
+                    std::cerr << "missing cd image file path (--cdimage)" << std::endl;
+                    return -1;
+                }
+            }
+            else if (parser.exist("cdrom"))
+            {
+                const std::string driveName = parser.get<std::string>("cdrom");
+                if (!BuildCdromDevicePath(driveName, filename))
+                {
+                    std::cerr << "invalid cd-rom drive name (--cdrom), use 'F' or 'F:'" << std::endl;
+                    return -1;
+                }
+                bPlaylist = false;
             }
             else
             {
                 filename = parser.get<std::string>("filename");
                 bPlaylist = false;
+                if (filename.empty())
+                {
+                    std::cerr << "missing media source, use --filename/--playlist/--cdimage/--cdrom" << std::endl;
+                    return -1;
+                }
             }
             std::string speakerCfg = parser.get<std::string>("speakerlayout");
             //std::cout << "audio source name: " << audioSource->GetName() << std::endl;
