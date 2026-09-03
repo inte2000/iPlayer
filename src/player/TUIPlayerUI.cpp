@@ -9,11 +9,54 @@
 #include "PlayList.h"
 #include "PlayListFile.h"
 #include "ComEnv.h"
+#include "AudioCD.h"
 #include <format>
 #include <cmath>
 #include <thread>
 
 using namespace ftxui;
+
+namespace {
+
+bool BuildCDTrackPlaylist(const std::wstring& sourceName, CPlayList& playlist)
+{
+    CAudioCD audioCD;
+    if (!audioCD.Open(sourceName)) {
+        return false;
+    }
+
+    std::wstring playlistName = audioCD.GetTitle();
+    if (playlistName.empty()) {
+        playlistName = GetFileNamePart(sourceName);
+    }
+    if (playlistName.empty()) {
+        playlistName = L"Audio CD";
+    }
+    playlist.SetName(playlistName);
+
+    const uint32_t trackCount = audioCD.GetTrackCount();
+    for (uint32_t i = 0; i < trackCount; ++i)
+    {
+        const CD_TRACK_INFO& trackInfo = audioCD.GetTrackInfo(i);
+        if (!trackInfo.isAudio || (trackInfo.length <= 0)) {
+            continue;
+        }
+
+        MusicItem item;
+        item.itemType = MUSIC_ITEM_TYPE_CD_TRACK;
+        item.res_url = sourceName;
+        item.track = static_cast<int32_t>(i + 1);
+        item.duration = audioCD.GetTrackTime(i);
+        item.title = audioCD.GetTrackTitle(i);
+        item.artists = audioCD.GetTrackArtist(i);
+        item.album = audioCD.GetTrackAlbum(i);
+        playlist.AddItem(std::move(item));
+    }
+
+    return (playlist.GetCount() > 0);
+}
+
+} // namespace
 
 TUIPlayerUI::TUIPlayerUI()
     : m_screen(ScreenInteractive::Fullscreen())
@@ -37,7 +80,12 @@ TUIPlayerUI::~TUIPlayerUI()
     Exit();
 }
 
-bool TUIPlayerUI::Init(std::unique_ptr<CAudioDevice> audioDevice, const std::string& deviceId, const std::string& filename, bool bPlaylist, const std::string& speakerLayout)
+bool TUIPlayerUI::Init(std::unique_ptr<CAudioDevice> audioDevice,
+    const std::string& deviceId,
+    const std::string& filename,
+    bool bPlaylist,
+    bool bCdSource,
+    const std::string& speakerLayout)
 {
     m_playback = CPlayback::Create(this, std::move(audioDevice));
     m_playback->SetOutputDeviceId(deviceId);
@@ -45,10 +93,16 @@ bool TUIPlayerUI::Init(std::unique_ptr<CAudioDevice> audioDevice, const std::str
     std::unique_ptr<CSpeakerConfig> speakCfg = LoadSpeakerConfig(speakerLayout);
     m_playback->SetSpeakerConfig(std::move(speakCfg));
 
-    m_isPlaylist = true;
+    m_isPlaylist = bPlaylist || bCdSource;
     if (bPlaylist)
     {
         if (!LoadPlaylist(filename))
+            return false;
+    }
+    else if (bCdSource)
+    {
+        const std::wstring sourceName = LocalMBCSToUtf16Le(filename);
+        if (!BuildCDTrackPlaylist(sourceName, m_playlist))
             return false;
     }
     else
@@ -59,6 +113,7 @@ bool TUIPlayerUI::Init(std::unique_ptr<CAudioDevice> audioDevice, const std::str
         item.title = GetFileNamePart(item.res_url);
         m_playlist.SetName(L"single");
         m_playlist.Copy({ item });
+        m_isPlaylist = false;
     }
 
     std::unique_ptr<CMusic> currentMusic = m_playlist.GetCurrentMusic();

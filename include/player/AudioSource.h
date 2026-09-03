@@ -62,6 +62,7 @@ private:
 };
 
 std::unique_ptr<CAudioSource> MakeFileAudioSource(const std::wstring& filename);
+std::unique_ptr<CAudioSource> MakeCDTrackAudioSource(const std::wstring& sourceName, uint32_t track);
 
 
 #endif //AUDIO_SOURCE_H

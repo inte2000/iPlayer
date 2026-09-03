@@ -28,6 +28,7 @@
 #include "PlayListFile.h"
 #include "ComEnv.h"
 #include "DecoderFactory.h"
+#include "AudioCD.h"
 #include "StdFileSystem.h"
 
 static std::string s_deviceId, s_devideName, s_deviceType;
@@ -236,6 +237,44 @@ void SetupDevice(const std::string& type, const std::string& deviceName, const s
     s_deviceId = deviceId;
 }
 
+static bool BuildCDTrackPlaylist(const std::wstring& sourceName, CPlayList& playlist)
+{
+    CAudioCD audioCD;
+    if (!audioCD.Open(sourceName)) {
+        return false;
+    }
+
+    std::wstring playlistName = audioCD.GetTitle();
+    if (playlistName.empty()) {
+        playlistName = std::filesystem::path(sourceName).filename().wstring();
+    }
+    if (playlistName.empty()) {
+        playlistName = L"Audio CD";
+    }
+    playlist.SetName(playlistName);
+
+    const uint32_t trackCount = audioCD.GetTrackCount();
+    for (uint32_t i = 0; i < trackCount; ++i)
+    {
+        const CD_TRACK_INFO& trackInfo = audioCD.GetTrackInfo(i);
+        if (!trackInfo.isAudio || (trackInfo.length <= 0)) {
+            continue;
+        }
+
+        MusicItem item;
+        item.itemType = MUSIC_ITEM_TYPE_CD_TRACK;
+        item.res_url = sourceName;
+        item.track = static_cast<int32_t>(i + 1);
+        item.duration = audioCD.GetTrackTime(i);
+        item.title = audioCD.GetTrackTitle(i);
+        item.artists = audioCD.GetTrackArtist(i);
+        item.album = audioCD.GetTrackAlbum(i);
+        playlist.AddItem(std::move(item));
+    }
+
+    return (playlist.GetCount() > 0);
+}
+
 static std::vector<std::string> SplitExtList(const std::string& extList)
 {
     std::vector<std::string> result;
@@ -385,7 +424,7 @@ int MakePlayListFileInterface(const std::string& folder, bool recursion, const s
     return 0;
 }
 
-void StartPlayingInterface(const std::string& filename, bool bPlaylist, const std::string& speakerLayout)
+void StartPlayingInterface(const std::string& filename, bool bPlaylist, bool bCdSource, const std::string& speakerLayout)
 {
     CAudioDeviceMgmt devMgmt; 
 
@@ -411,10 +450,19 @@ void StartPlayingInterface(const std::string& filename, bool bPlaylist, const st
         return playback->SetAudioSource(std::move(source), autoStart);
     };
 
-    if (bPlaylist)
+    if (bPlaylist || bCdSource)
     {
-        if (!LoadPlaylistFile(filename, playlist))
-            throw std::runtime_error("fail to load playlist file");
+        if (bCdSource)
+        {
+            const std::wstring sourceName = LocalMBCSToUtf16Le(filename);
+            if (!BuildCDTrackPlaylist(sourceName, playlist))
+                throw std::runtime_error("fail to build playlist from CD source");
+        }
+        else
+        {
+            if (!LoadPlaylistFile(filename, playlist))
+                throw std::runtime_error("fail to load playlist file");
+        }
 
         if (playlist.GetCount() == 0)
             throw std::runtime_error("playlist is empty");
@@ -454,12 +502,12 @@ void StartPlayingInterface(const std::string& filename, bool bPlaylist, const st
                 if (playback->HasAudioSource())
                     playback->Stop();
             }
-            else if ((userKey == 'n') && bPlaylist)
+            else if ((userKey == 'n') && (bPlaylist || bCdSource))
             {
                 if (!loadMusic(playlist.GetNextMusic(), true))
                     std::cout << "no next playlist item" << std::endl;
             }
-            else if ((userKey == 'b') && bPlaylist)
+            else if ((userKey == 'b') && (bPlaylist || bCdSource))
             {
                 if (!loadMusic(playlist.GetPrevMusic(), true))
                     std::cout << "no previous playlist item" << std::endl;
@@ -472,11 +520,11 @@ void StartPlayingInterface(const std::string& filename, bool bPlaylist, const st
     playback->Shutdown();
 }
 
-void StartPlayingTuiInterface(const std::string& filename, bool bPlaylist, const std::string& speakerLayout)
+void StartPlayingTuiInterface(const std::string& filename, bool bPlaylist, bool bCdSource, const std::string& speakerLayout)
 {
     std::unique_ptr<CAudioDevice> audioDevice = MakeAudioDevice(s_deviceType, s_devideName, s_deviceId);
     TUIPlayerUI tuiUI;
-    if(!tuiUI.Init(std::move(audioDevice), s_deviceId, filename, bPlaylist, speakerLayout))
+    if(!tuiUI.Init(std::move(audioDevice), s_deviceId, filename, bPlaylist, bCdSource, speakerLayout))
         throw std::runtime_error("Fail to init tui object!");
                 
     tuiUI.Run();        

@@ -1,6 +1,7 @@
 #include <filesystem>
 #include "AudioSource.h"
 #include "FileStream.h"
+#include "CDSectorsStream.h"
 //#include "Utf8String.h"
 #include "UnicodeConvert.h"
 
@@ -30,6 +31,27 @@ std::unique_ptr<CAudioSource> MakeFileAudioSource(const std::wstring& filename)
     return std::make_unique<CAudioSource>(std::move(streamPtr), std::move(decoderPtr), fileFmt);
     //return std::unique_ptr<CAudioSource>(new CAudioSource{});
 }
+
+std::unique_ptr<CAudioSource> MakeCDTrackAudioSource(const std::wstring& sourceName, uint32_t track)
+{
+    if (track == 0) {
+        throw std::runtime_error("CD track index must start from 1");
+    }
+
+    std::unique_ptr<CDataStream> streamPtr = MakeCDSectorsStream(sourceName, track);
+    if (!streamPtr) {
+        throw MakeRuntimeError("Fail to open CD track stream: ", sourceName);
+    }
+
+    CDecoderFactory& factory = CDecoderFactory::GetInstance();
+    std::unique_ptr<CAudioDecoder> decoderPtr = factory.MakeAudioDecoder(StreamFormatCDA);
+    if (!decoderPtr) {
+        throw std::runtime_error("Fail to generate CD track decoder");
+    }
+
+    return std::make_unique<CAudioSource>(std::move(streamPtr), std::move(decoderPtr), StreamFormatCDA);
+}
+
 CAudioSource::CAudioSource()
 {
     InitEmptyAudioFormat(&m_outFmt);

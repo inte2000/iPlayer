@@ -7,7 +7,7 @@
 constexpr int MUSIC_ITEM_TYPE_UNKNOWN = 0;
 constexpr int MUSIC_ITEM_TYPE_FILE = 1;
 constexpr int MUSIC_ITEM_TYPE_CD_TRACK = 2;
-constexpr int MUSIC_ITEM_TYPE_CD_IMAGE = 3;
+constexpr int MUSIC_ITEM_TYPE_CUE_TRACK = 3;
 constexpr int MUSIC_ITEM_TYPE_NETWORK_STREAM = 4;
 
 struct MusicItem

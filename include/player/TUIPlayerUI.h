@@ -25,7 +25,12 @@ public:
     explicit TUIPlayerUI();
     ~TUIPlayerUI();
 
-    bool Init(std::unique_ptr<CAudioDevice> audioDevice, const std::string& deviceId, const std::string& filename, bool bPlaylist, const std::string& speakerLayout);
+    bool Init(std::unique_ptr<CAudioDevice> audioDevice,
+        const std::string& deviceId,
+        const std::string& filename,
+        bool bPlaylist,
+        bool bCdSource,
+        const std::string& speakerLayout);
 
     void Run();
     void Exit();

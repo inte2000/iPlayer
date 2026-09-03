@@ -26,6 +26,11 @@ std::wstring CFileMusic::GetResUrl() const
 
 std::unique_ptr<CAudioSource> CFileMusic::MakeAudioSource() const
 {
+    if (m_item.itemType == MUSIC_ITEM_TYPE_CD_TRACK)
+    {
+        return MakeCDTrackAudioSource(m_item.res_url, static_cast<uint32_t>(m_item.track));
+    }
+
     return MakeFileAudioSource(m_item.res_url);
 }
 

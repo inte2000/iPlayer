@@ -234,7 +234,7 @@ static bool BuildCdromDevicePath(const std::string& value, std::string& devicePa
     }
 
     driveLetter = static_cast<char>(std::toupper(static_cast<unsigned char>(driveLetter)));
-    devicePath = "\\device\\";
+    devicePath = "CDDevice--";
     devicePath.push_back(driveLetter);
     devicePath.push_back(':');
     return true;
@@ -358,16 +358,19 @@ int main(int argc, char *argv[])
             SetupDevice(deviceType, devideName, deviceId);
 
             bool bPlaylist = false;
+            bool bCdSource = false;
             std::string filename;
             if (parser.exist("playlist"))
             {
                 filename = parser.get<std::string>("playlist");
                 bPlaylist = true;
+                bCdSource = false;
             }
             else if (parser.exist("cdimage"))
             {
                 filename = parser.get<std::string>("cdimage");
                 bPlaylist = false;
+                bCdSource = true;
                 if (filename.empty())
                 {
                     std::cerr << "missing cd image file path (--cdimage)" << std::endl;
@@ -383,11 +386,13 @@ int main(int argc, char *argv[])
                     return -1;
                 }
                 bPlaylist = false;
+                bCdSource = true;
             }
             else
             {
                 filename = parser.get<std::string>("filename");
                 bPlaylist = false;
+                bCdSource = false;
                 if (filename.empty())
                 {
                     std::cerr << "missing media source, use --filename/--playlist/--cdimage/--cdrom" << std::endl;
@@ -398,12 +403,12 @@ int main(int argc, char *argv[])
             //std::cout << "audio source name: " << audioSource->GetName() << std::endl;
             if(parser.exist("tui"))
             {
-                StartPlayingTuiInterface(filename, bPlaylist, speakerCfg);
+                StartPlayingTuiInterface(filename, bPlaylist, bCdSource, speakerCfg);
             }
             else
             {
                 std::cout << "Play media file: " << filename << std::endl;
-                StartPlayingInterface(filename, bPlaylist, speakerCfg);
+                StartPlayingInterface(filename, bPlaylist, bCdSource, speakerCfg);
             }
         }        
     }

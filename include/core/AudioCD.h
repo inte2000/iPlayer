@@ -8,8 +8,8 @@
 #include <string>
 
 extern "C" {
-#include <cdio/cdio.h>
-#include <cdio/cd_types.h>
+struct _CdIo;
+typedef struct _CdIo CdIo_t;
 }
 
 #define CD_BLOCKS_PER_SECOND	75

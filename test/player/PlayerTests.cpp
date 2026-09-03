@@ -109,6 +109,28 @@ TEST_CASE("CPlayList returns null for unsupported type", "[player]")
     REQUIRE(music == nullptr);
 }
 
+TEST_CASE("CPlayList supports CD track music items", "[player]")
+{
+    CPlayList playList;
+
+    MusicItem cdItem;
+    cdItem.itemType = MUSIC_ITEM_TYPE_CD_TRACK;
+    cdItem.res_url = L"CDDevice--F:";
+    cdItem.track = 3;
+    cdItem.title = L"Track 03";
+    cdItem.artists = L"Artist";
+    cdItem.album = L"Album";
+
+    REQUIRE(playList.AddItem(cdItem));
+
+    std::unique_ptr<CMusic> music = playList.GetMusic(0);
+    REQUIRE(music != nullptr);
+    CHECK(music->GetType() == MUSIC_ITEM_TYPE_CD_TRACK);
+    CHECK(music->GetResUrl() == L"CDDevice--F:");
+    CHECK(music->GetTrack() == 3);
+    CHECK(music->GetTitle() == L"Track 03");
+}
+
 TEST_CASE("Playlist file save and load round trip", "[player]")
 {
     const std::filesystem::path tmp = std::filesystem::temp_directory_path() / "implayer_playlist_test.json";

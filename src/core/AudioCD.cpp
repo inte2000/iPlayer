@@ -3,6 +3,10 @@
 #include <windows.h>
 #include <winioctl.h>
 #include <ntddcdrm.h>   // for CDROM_READ_AUDIO
+extern "C" {
+#include <cdio/cdio.h>
+#include <cdio/cd_types.h>
+}
 #include "StringEx.h"
 #include "UnicodeConvert.h"
 #include "AudioCDCommon.h"
