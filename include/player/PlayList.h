@@ -18,6 +18,7 @@ public:
     const std::wstring& GetName() const;
     void SetName(const std::wstring& name);
     uint32_t GetCount() const;
+    int32_t GetCurrentIndex() const { return m_curSeqIndex; }
     std::unique_ptr<CMusic> GetMusic(uint32_t index);
     std::unique_ptr<CMusic> GetCurrentMusic();
     std::unique_ptr<CMusic> GetNextMusic();

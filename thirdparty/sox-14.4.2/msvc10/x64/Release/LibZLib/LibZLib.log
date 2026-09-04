@@ -1,0 +1,12 @@
+﻿  adler32.c
+  compress.c
+  crc32.c
+  deflate.c
+  infback.c
+  inffast.c
+  inflate.c
+  inftrees.c
+  trees.c
+  uncompr.c
+  zutil.c
+  LibZLib.vcxproj -> E:\workspace\iPlayer\thirdparty\sox-14.4.2\msvc10\x64\Release\LibZLib.lib

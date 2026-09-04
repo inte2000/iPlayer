@@ -31,12 +31,18 @@ implayer.exe -cd decoder_name
 imPlayer.exe -p --tui --filename=...
 ```
 
-播放音乐列表使用 -p 参数配合 playlist 参数，比如：
+播放音乐列表使用 -p 参数配合 playlist 参数（-ml 参数创建播放列表），比如：
 ```
-imPlayer.exe -p --tui --playlist=
+imPlayer.exe -p --tui --playlist=...
 ```
 
-可使用 -ml 参数创建播放列表：
+播放音乐CD，可以直接指定设备，也支持直接打开 CD 映像文件播放：
+```
+imPlayer.exe -p --tui --cdrom=F
+imPlayer.exe -p --tui --cdimage=...
+```
+
+可使用 -ml 参数创建播放列表文件：
 ```
 imPlayer.exe -ml --folder=... [--recursion] [--playlist=...]
 ```

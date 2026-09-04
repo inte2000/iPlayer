@@ -1,0 +1,33 @@
+本次任务有三个：
+
+1、DataBuffer::EnsureWindowFor 调用 ConvertCDAudioToLittleEndian 函数做字节序的转换，这里需要判断一下当前系统是否已经是小字节序，不是的情况再做转换。CpuArchEndian.h 头文件中有支持这个操作的基础设置。
+
+2、tui界面的playlist 显示采用 "title(filename)" 的格式，当列表数量超过显示窗口的范围时，要支持滚动显示列表内容。
+
+3、增加一个 --sequence 参数，--sequence=forward 时，使用 CForwardPlaySequence 配合 playlist 正向播放，这也是默认的播放方向。当使用 --sequence=backward 时，使用 CBackwardPlaySequence 配合 playlist 反向播放。
+
+
+/***********************************************************/
+
+已重新加载并完成你这版 todo_task.txt 的三个任务，且已构建验证通过。  
+另外我在收尾前做了 Oracle 复核，并按其指出的两个潜在回归（播放序列边界与当前曲目定位）补了修正。
+- DataBuffer 字节序修正  
+在 cdtrack_decoder/DataBuffer.cpp 引入 CpuArchEndian.h，EnsureWindowFor() 里仅在 ARCH_CPU_BIG_ENDIAN 时才调用 ConvertCDAudioToLittleEndian()，小端系统不再做无意义转换。
+- TUI playlist 显示与滚动  
+在 src/player/TUIPlayerUI.cpp：
+- 列表文案改为 title(filename)（当 title != filename 时；否则显示文件名，避免 a.wav(a.wav) 这种重复）。
+- 列表窗口改为固定高度 size(HEIGHT, EQUAL, 9)，配合 frame | vscroll_indicator 支持超出窗口时滚动显示。
+- 当前项高亮改为按 playlist 当前索引，不再仅靠 res_url（CD 场景下多个曲目同 URL 会误判）。
+- 新增 --sequence 正/反向播放  
+- src/main.cpp 增加参数：--sequence=forward|backward（默认 forward）。
+- 播放入口签名扩展并透传 sequenceMode：  
+StartPlayingInterface(...)、StartPlayingTuiInterface(...)、TUIPlayerUI::Init(...)。
+- 在 PlayInterface 与 TUIPlayerUI 中对 playlist 应用  
+CForwardPlaySequence / CBackwardPlaySequence。
+- 额外修复（Oracle 建议）：CPlaySequence::MoveNext/MovePrevious 在边界 -1 时不再破坏当前状态；并给 CPlaySequence 成员增加安全默认初始化。
+构建与运行验证：
+- cmake --build build/debug --target imPlayer ✅
+- imPlayer.exe --help 显示含 --sequence 的帮助 ✅
+- imPlayer.exe --play --sequence=backward --cdrom=12 参数校验正常报错 ✅
+- imPlayer.exe --play --sequence=invalid --filename=a.mp3 oneof 校验正常报错并打印 usage ✅
+

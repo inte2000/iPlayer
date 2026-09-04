@@ -85,6 +85,7 @@ bool TUIPlayerUI::Init(std::unique_ptr<CAudioDevice> audioDevice,
     const std::string& filename,
     bool bPlaylist,
     bool bCdSource,
+    int sequenceMode,
     const std::string& speakerLayout)
 {
     m_playback = CPlayback::Create(this, std::move(audioDevice));
@@ -116,9 +117,28 @@ bool TUIPlayerUI::Init(std::unique_ptr<CAudioDevice> audioDevice,
         m_isPlaylist = false;
     }
 
+    if (m_isPlaylist)
+    {
+        const int32_t end = static_cast<int32_t>(m_playlist.GetCount());
+        if (sequenceMode == 1) {
+            m_playlist.SetSequence(std::make_unique<CBackwardPlaySequence>(0, end, false));
+        }
+        else {
+            m_playlist.SetSequence(std::make_unique<CForwardPlaySequence>(0, end, false));
+        }
+    }
+
     std::unique_ptr<CMusic> currentMusic = m_playlist.GetCurrentMusic();
     if (!currentMusic)
         return false;
+
+    if (m_isPlaylist)
+    {
+        const int32_t curIndex = m_playlist.GetCurrentIndex();
+        if (curIndex >= 0) {
+            m_playlistCursor = curIndex;
+        }
+    }
 
     m_currentPlayingResUrl = currentMusic->GetResUrl();
     std::unique_ptr<CAudioSource> source = currentMusic->MakeAudioSource();
@@ -206,6 +226,10 @@ bool TUIPlayerUI::OnAudioEnd(bool lastStream)
         std::unique_ptr<CMusic> nextMusic = m_playlist.GetNextMusic();
         if (nextMusic)
         {
+            const int32_t curIndex = m_playlist.GetCurrentIndex();
+            if (curIndex >= 0) {
+                m_playlistCursor = curIndex;
+            }
             m_currentPlayingResUrl = nextMusic->GetResUrl();
             std::unique_ptr<CAudioSource> source = nextMusic->MakeAudioSource();
             if (source)
@@ -308,6 +332,7 @@ void TUIPlayerUI::RefreshPlaylistTitles()
     m_playlistTitles.reserve(m_playlist.GetCount());
 
     const uint32_t count = m_playlist.GetCount();
+    const int32_t currentIndex = m_playlist.GetCurrentIndex();
     for (uint32_t i = 0; i < count; ++i)
     {
         MusicItem item;
@@ -315,8 +340,14 @@ void TUIPlayerUI::RefreshPlaylistTitles()
             continue;
 
         std::wstring fileName = GetFileNamePart(item.res_url);
-        std::string title = Utf16ToUtf8(fileName);
-        if (!m_currentPlayingResUrl.empty() && (item.res_url == m_currentPlayingResUrl))
+        std::wstring display = fileName;
+        if (!item.title.empty() && (item.title != fileName))
+        {
+            display = std::format(L"{}({})", item.title, fileName);
+        }
+
+        std::string title = Utf16ToUtf8(display);
+        if (currentIndex == static_cast<int32_t>(i))
             title = "* " + title;
         m_playlistTitles.push_back(std::move(title));
     }
@@ -372,10 +403,7 @@ void TUIPlayerUI::BuildUI()
     {
         MenuOption option = MenuOption::Vertical();
         option.entries_option.transform = [this](const EntryState& state) {
-            MusicItem item;
-            bool isCurrent = false;
-            if (m_playlist.GetItem(static_cast<uint32_t>(state.index), item))
-                isCurrent = (!m_currentPlayingResUrl.empty() && (item.res_url == m_currentPlayingResUrl));
+            const bool isCurrent = (m_playlist.GetCurrentIndex() == state.index);
 
             if (isCurrent)
                 return text(state.label) | color(Color::YellowLight) | bold;
@@ -486,7 +514,7 @@ void TUIPlayerUI::BuildUI()
         {
             playlist_box = vbox({
                 text("Playlist") | bold,
-                m_playlist_menu->Render() | frame | vscroll_indicator | size(HEIGHT, LESS_THAN, 9),
+                m_playlist_menu->Render() | frame | vscroll_indicator | size(HEIGHT, EQUAL, 9),
             }) | border;
         }
 

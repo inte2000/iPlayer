@@ -30,6 +30,7 @@ public:
         const std::string& filename,
         bool bPlaylist,
         bool bCdSource,
+        int sequenceMode,
         const std::string& speakerLayout);
 
     void Run();

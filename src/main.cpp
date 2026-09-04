@@ -260,6 +260,7 @@ bool MakeParser(cmdline::parser& a)
     a.add<std::string>("folder", '\0', "folder path for playlist generation", false, "");
     a.add("recursion", '\0', "scan sub folders recursively");
     a.add<std::string>("playlist", 'l', "playlist file name", false, "");
+    a.add<std::string>("sequence", '\0', "playlist sequence: forward/backward", false, "forward", cmdline::oneof<std::string>("forward", "backward"));
     a.add<std::string>("out", '\0', "output media file name", false, "");
     a.add<std::string>("ffmt", '\0', "output media format", false, "wav");
     a.add<uint32_t>("srate", '\0', "output sample rate", false, 44100);
@@ -400,15 +401,17 @@ int main(int argc, char *argv[])
                 }
             }
             std::string speakerCfg = parser.get<std::string>("speakerlayout");
+            const std::string sequence = parser.get<std::string>("sequence");
+            const int sequenceMode = (sequence == "backward") ? 1 : 0;
             //std::cout << "audio source name: " << audioSource->GetName() << std::endl;
             if(parser.exist("tui"))
             {
-                StartPlayingTuiInterface(filename, bPlaylist, bCdSource, speakerCfg);
+                StartPlayingTuiInterface(filename, bPlaylist, bCdSource, sequenceMode, speakerCfg);
             }
             else
             {
                 std::cout << "Play media file: " << filename << std::endl;
-                StartPlayingInterface(filename, bPlaylist, bCdSource, speakerCfg);
+                StartPlayingInterface(filename, bPlaylist, bCdSource, sequenceMode, speakerCfg);
             }
         }        
     }

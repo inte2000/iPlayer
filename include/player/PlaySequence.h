@@ -21,13 +21,13 @@ protected:
     virtual int32_t GetNextIndex(int32_t index) = 0;
     virtual int32_t GetPreviousIndex(int32_t index) = 0;
 
-    int32_t m_curIdx;
-    int32_t m_PrevIdx;
-    int32_t m_NextIdx;
-    int32_t m_begin; 
-    int32_t m_end;
-    int32_t m_seqMode;
-    bool m_bCycling;
+    int32_t m_curIdx = -1;
+    int32_t m_PrevIdx = -1;
+    int32_t m_NextIdx = -1;
+    int32_t m_begin = 0;
+    int32_t m_end = 0;
+    int32_t m_seqMode = 0;
+    bool m_bCycling = false;
 };
 
 class CForwardPlaySequence : public CPlaySequence

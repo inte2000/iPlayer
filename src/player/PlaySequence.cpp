@@ -20,6 +20,8 @@ int32_t CPlaySequence::MovePrevious()
 {
     if ((m_end - m_begin) <= 0)
         return -1;
+    if (m_PrevIdx < 0)
+        return -1;
 
     m_NextIdx = m_curIdx;
     m_curIdx = m_PrevIdx;
@@ -31,6 +33,8 @@ int32_t CPlaySequence::MovePrevious()
 int32_t CPlaySequence::MoveNext()
 {
     if ((m_end - m_begin) <= 0)
+        return -1;
+    if (m_NextIdx < 0)
         return -1;
 
     m_PrevIdx = m_curIdx;

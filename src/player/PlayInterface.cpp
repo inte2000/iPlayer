@@ -237,6 +237,17 @@ void SetupDevice(const std::string& type, const std::string& deviceName, const s
     s_deviceId = deviceId;
 }
 
+static void ApplyPlaylistSequence(CPlayList& playlist, int sequenceMode)
+{
+    const int32_t end = static_cast<int32_t>(playlist.GetCount());
+    if (sequenceMode == 1) {
+        playlist.SetSequence(std::make_unique<CBackwardPlaySequence>(0, end, false));
+        return;
+    }
+
+    playlist.SetSequence(std::make_unique<CForwardPlaySequence>(0, end, false));
+}
+
 static bool BuildCDTrackPlaylist(const std::wstring& sourceName, CPlayList& playlist)
 {
     CAudioCD audioCD;
@@ -424,7 +435,11 @@ int MakePlayListFileInterface(const std::string& folder, bool recursion, const s
     return 0;
 }
 
-void StartPlayingInterface(const std::string& filename, bool bPlaylist, bool bCdSource, const std::string& speakerLayout)
+void StartPlayingInterface(const std::string& filename,
+    bool bPlaylist,
+    bool bCdSource,
+    int sequenceMode,
+    const std::string& speakerLayout)
 {
     CAudioDeviceMgmt devMgmt; 
 
@@ -466,6 +481,8 @@ void StartPlayingInterface(const std::string& filename, bool bPlaylist, bool bCd
 
         if (playlist.GetCount() == 0)
             throw std::runtime_error("playlist is empty");
+
+        ApplyPlaylistSequence(playlist, sequenceMode);
 
         pif.BindPlaylist(&playlist);
 
@@ -520,11 +537,15 @@ void StartPlayingInterface(const std::string& filename, bool bPlaylist, bool bCd
     playback->Shutdown();
 }
 
-void StartPlayingTuiInterface(const std::string& filename, bool bPlaylist, bool bCdSource, const std::string& speakerLayout)
+void StartPlayingTuiInterface(const std::string& filename,
+    bool bPlaylist,
+    bool bCdSource,
+    int sequenceMode,
+    const std::string& speakerLayout)
 {
     std::unique_ptr<CAudioDevice> audioDevice = MakeAudioDevice(s_deviceType, s_devideName, s_deviceId);
     TUIPlayerUI tuiUI;
-    if(!tuiUI.Init(std::move(audioDevice), s_deviceId, filename, bPlaylist, bCdSource, speakerLayout))
+    if(!tuiUI.Init(std::move(audioDevice), s_deviceId, filename, bPlaylist, bCdSource, sequenceMode, speakerLayout))
         throw std::runtime_error("Fail to init tui object!");
                 
     tuiUI.Run();        

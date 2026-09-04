@@ -1,0 +1,14 @@
+E:\workspace\iPlayer\thirdparty\sox-14.4.2\libgsm\add.c;E:\workspace\iPlayer\thirdparty\sox-14.4.2\msvc10\x64\Debug\LibGsm\add.obj
+E:\workspace\iPlayer\thirdparty\sox-14.4.2\libgsm\code.c;E:\workspace\iPlayer\thirdparty\sox-14.4.2\msvc10\x64\Debug\LibGsm\code.obj
+E:\workspace\iPlayer\thirdparty\sox-14.4.2\libgsm\decode.c;E:\workspace\iPlayer\thirdparty\sox-14.4.2\msvc10\x64\Debug\LibGsm\decode.obj
+E:\workspace\iPlayer\thirdparty\sox-14.4.2\libgsm\gsm_create.c;E:\workspace\iPlayer\thirdparty\sox-14.4.2\msvc10\x64\Debug\LibGsm\gsm_create.obj
+E:\workspace\iPlayer\thirdparty\sox-14.4.2\libgsm\gsm_decode.c;E:\workspace\iPlayer\thirdparty\sox-14.4.2\msvc10\x64\Debug\LibGsm\gsm_decode.obj
+E:\workspace\iPlayer\thirdparty\sox-14.4.2\libgsm\gsm_destroy.c;E:\workspace\iPlayer\thirdparty\sox-14.4.2\msvc10\x64\Debug\LibGsm\gsm_destroy.obj
+E:\workspace\iPlayer\thirdparty\sox-14.4.2\libgsm\gsm_encode.c;E:\workspace\iPlayer\thirdparty\sox-14.4.2\msvc10\x64\Debug\LibGsm\gsm_encode.obj
+E:\workspace\iPlayer\thirdparty\sox-14.4.2\libgsm\gsm_option.c;E:\workspace\iPlayer\thirdparty\sox-14.4.2\msvc10\x64\Debug\LibGsm\gsm_option.obj
+E:\workspace\iPlayer\thirdparty\sox-14.4.2\libgsm\long_term.c;E:\workspace\iPlayer\thirdparty\sox-14.4.2\msvc10\x64\Debug\LibGsm\long_term.obj
+E:\workspace\iPlayer\thirdparty\sox-14.4.2\libgsm\lpc.c;E:\workspace\iPlayer\thirdparty\sox-14.4.2\msvc10\x64\Debug\LibGsm\lpc.obj
+E:\workspace\iPlayer\thirdparty\sox-14.4.2\libgsm\preprocess.c;E:\workspace\iPlayer\thirdparty\sox-14.4.2\msvc10\x64\Debug\LibGsm\preprocess.obj
+E:\workspace\iPlayer\thirdparty\sox-14.4.2\libgsm\rpe.c;E:\workspace\iPlayer\thirdparty\sox-14.4.2\msvc10\x64\Debug\LibGsm\rpe.obj
+E:\workspace\iPlayer\thirdparty\sox-14.4.2\libgsm\short_term.c;E:\workspace\iPlayer\thirdparty\sox-14.4.2\msvc10\x64\Debug\LibGsm\short_term.obj
+E:\workspace\iPlayer\thirdparty\sox-14.4.2\libgsm\table.c;E:\workspace\iPlayer\thirdparty\sox-14.4.2\msvc10\x64\Debug\LibGsm\table.obj
