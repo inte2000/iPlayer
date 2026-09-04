@@ -100,8 +100,10 @@ std::unique_ptr<CMusic> CPlayList::MakeMusicByIndex(int32_t index) const
         return nullptr;
 
     const MusicItem& item = m_items[static_cast<size_t>(index)];
-    if ((item.itemType == MUSIC_ITEM_TYPE_FILE) || (item.itemType == MUSIC_ITEM_TYPE_CD_TRACK))
+    if (item.itemType == MUSIC_ITEM_TYPE_FILE)
         return std::make_unique<CFileMusic>(item);
+    if (item.itemType == MUSIC_ITEM_TYPE_CD_TRACK)
+        return std::make_unique<CCDTrackMusic>(item);
 
     return nullptr;
 }

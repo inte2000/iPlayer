@@ -26,11 +26,6 @@ std::wstring CFileMusic::GetResUrl() const
 
 std::unique_ptr<CAudioSource> CFileMusic::MakeAudioSource() const
 {
-    if (m_item.itemType == MUSIC_ITEM_TYPE_CD_TRACK)
-    {
-        return MakeCDTrackAudioSource(m_item.res_url, static_cast<uint32_t>(m_item.track));
-    }
-
     return MakeFileAudioSource(m_item.res_url);
 }
 
@@ -65,6 +60,66 @@ std::wstring CFileMusic::GetLyricsFilePath() const
 }
 
 std::wstring CFileMusic::GetAlbumArtFilePath() const
+{
+    return m_item.albumArtFilePath;
+}
+
+CCDTrackMusic::CCDTrackMusic(const MusicItem& item)
+    : m_item(item)
+{
+}
+
+CCDTrackMusic::CCDTrackMusic(MusicItem&& item)
+    : m_item(std::move(item))
+{
+}
+
+uint32_t CCDTrackMusic::GetType() const
+{
+    return static_cast<uint32_t>(m_item.itemType);
+}
+
+std::wstring CCDTrackMusic::GetResUrl() const
+{
+    return m_item.res_url;
+}
+
+std::unique_ptr<CAudioSource> CCDTrackMusic::MakeAudioSource() const
+{
+    return MakeCDTrackAudioSource(m_item.res_url, static_cast<uint32_t>(m_item.track));
+}
+
+int32_t CCDTrackMusic::GetTrack() const
+{
+    return m_item.track;
+}
+
+float CCDTrackMusic::GetDuration() const
+{
+    return m_item.duration;
+}
+
+std::wstring CCDTrackMusic::GetTitle() const
+{
+    return m_item.title;
+}
+
+std::wstring CCDTrackMusic::GetArtists() const
+{
+    return m_item.artists;
+}
+
+std::wstring CCDTrackMusic::GetAlbum() const
+{
+    return m_item.album;
+}
+
+std::wstring CCDTrackMusic::GetLyricsFilePath() const
+{
+    return m_item.lyricsFilePath;
+}
+
+std::wstring CCDTrackMusic::GetAlbumArtFilePath() const
 {
     return m_item.albumArtFilePath;
 }

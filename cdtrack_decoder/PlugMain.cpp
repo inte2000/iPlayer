@@ -54,7 +54,7 @@ int WINAPI Plug_OnRegister(const ApplicationConfig* app, PluginRegister* regInfo
     }
 
     const FileExtRegItem fmtMap[] = {
-        {StreamFormatCDA, "Audio CD Track", ".cda"},
+        {StreamFormatCDT, "Audio CD Track", ".cdtrack"},
     };
 
     uint32_t formatCount = static_cast<uint32_t>(sizeof(fmtMap) / sizeof(fmtMap[0]));

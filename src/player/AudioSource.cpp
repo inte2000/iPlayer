@@ -44,12 +44,12 @@ std::unique_ptr<CAudioSource> MakeCDTrackAudioSource(const std::wstring& sourceN
     }
 
     CDecoderFactory& factory = CDecoderFactory::GetInstance();
-    std::unique_ptr<CAudioDecoder> decoderPtr = factory.MakeAudioDecoder(StreamFormatCDA);
+    std::unique_ptr<CAudioDecoder> decoderPtr = factory.MakeAudioDecoder(StreamFormatCDT);
     if (!decoderPtr) {
         throw std::runtime_error("Fail to generate CD track decoder");
     }
 
-    return std::make_unique<CAudioSource>(std::move(streamPtr), std::move(decoderPtr), StreamFormatCDA);
+    return std::make_unique<CAudioSource>(std::move(streamPtr), std::move(decoderPtr), StreamFormatCDT);
 }
 
 CAudioSource::CAudioSource()

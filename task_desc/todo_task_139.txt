@@ -1,0 +1,31 @@
+CD 曲目不要和 CFileMusic 混合在一起，设计一个独立的 CCDTrackMusic 对象代表 CD 曲目。CCDTrackMusic::MakeAudioSource() 根据 m_item.res_url 调用 MakeCDTrackAudioSource 直接创建 AudioSource，不需要
+
+不使用 StreamFormatCDA 对应CD曲目播放，StreamFormatCDA 准备用作对应 .cda 文件的处理。新增一个 StreamFormatCDT 格式，对应 CD 音轨曲目，MakeCDTrackAudioSource 使用 StreamFormatCDT 查找ＣＤ音轨对应插件。 
+
+CD 解码器的 fmtMap 改成这样：
+    const FileExtRegItem fmtMap[] = {
+        {StreamFormatCDT, "Audio CD Track", ".cdtrack"},
+    };
+
+最后，将 CD 曲目解码器添加到 plugin.config 中
+
+/***********************************************************/
+
+已按你更新后的 todo_task.txt 完成实现：CD 曲目已经从 CFileMusic 中独立出来，改为专用 CCDTrackMusic；CD 曲目解码格式从 StreamFormatCDA 切换为 StreamFormatCDT；cdtrack_decoder 的格式注册和 plugin.config 也同步更新，当前可直接通过 --cdrom 进入完整播放链路。
+- What  
+1. 新增 CCDTrackMusic（include/player/Music.h, src/player/Music.cpp），MakeAudioSource() 直接调用 MakeCDTrackAudioSource()；  
+2. CFileMusic 仅保留普通文件职责，不再混入 CD 曲目逻辑；  
+3. CPlayList::MakeMusicByIndex()（src/player/PlayList.cpp）改为：MUSIC_ITEM_TYPE_FILE -> CFileMusic，MUSIC_ITEM_TYPE_CD_TRACK -> CCDTrackMusic。
+- Format/Decoder 路由  
+- MakeCDTrackAudioSource()（src/player/AudioSource.cpp）已从 StreamFormatCDA 改为 StreamFormatCDT 查找插件并初始化 CAudioSource。  
+- cdtrack_decoder/PlugMain.cpp 的 fmtMap 改为：
+- {StreamFormatCDT, "Audio CD Track", ".cdtrack"}
+- Config  
+- 已将 CD 曲目解码器加入 plugin.config：  
+- config/plugin.config  
+- build/debug/bin/config/plugin.config
+- 新增项为 cdtrack_decoder.ipdplus / CD Track decoder / Decoder。
+- Verification  
+- cmake --build build/debug --target imPlayer 通过。  
+- imPlayer.exe 与 imPlayer.exe --help usage 正常。  
+- imPlayer.exe --play --cdrom=F 实测已进入播放并持续输出 Audio playing seconds...（说明 CDT 插件映射与播放链路生效）。

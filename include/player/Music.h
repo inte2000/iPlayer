@@ -49,4 +49,26 @@ private:
     MusicItem m_item;
 };
 
+class CCDTrackMusic : public CMusic
+{
+public:
+    explicit CCDTrackMusic(const MusicItem& item);
+    explicit CCDTrackMusic(MusicItem&& item);
+
+    uint32_t GetType() const override;
+    std::wstring GetResUrl() const override;
+    std::unique_ptr<CAudioSource> MakeAudioSource() const override;
+
+    int32_t GetTrack() const override;
+    float GetDuration() const override;
+    std::wstring GetTitle() const override;
+    std::wstring GetArtists() const override;
+    std::wstring GetAlbum() const override;
+    std::wstring GetLyricsFilePath() const override;
+    std::wstring GetAlbumArtFilePath() const override;
+
+private:
+    MusicItem m_item;
+};
+
 #endif // MUSIC_H
