@@ -2,6 +2,7 @@
 #include <cstring>
 
 #include "DataBuffer.h"
+#include "CpuArchEndian.h"
 
 DataBuffer::DataBuffer(SectorSource* source,
                        uint64_t startSector,
@@ -104,7 +105,9 @@ bool DataBuffer::EnsureWindowFor(std::size_t pos)
     }
 
     const std::size_t gotBytes = static_cast<std::size_t>(gotSectors) * m_sectorSize;
+#if defined(ARCH_CPU_BIG_ENDIAN)
     ConvertCDAudioToLittleEndian(m_window.data(), static_cast<uint32_t>(gotBytes));
+#endif
 
     m_windowOffset = mapOffset;
     m_windowValidBytes = std::min(gotBytes, m_totalSize - m_windowOffset);
